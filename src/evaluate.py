@@ -1,3 +1,4 @@
+
 import numpy as np
 
 from stable_baselines3 import PPO
@@ -7,7 +8,7 @@ from environment import DrillEnv
 env = DrillEnv()
 
 model = PPO.load(
-    "ppo_drill_baseline_f1_2"
+    "ppo_drill_baseline_f1_5"
 )
 
 all_holes = []

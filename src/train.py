@@ -15,5 +15,5 @@ model.learn(
 )
 
 model.save(
-    "ppo_drill_baseline_f1_2"
+    "ppo_drill_baseline_f1_5"
 )

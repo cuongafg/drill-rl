@@ -34,7 +34,7 @@ ACTIONS = [2, 4, 8, 12, 16]
 # Reward weights — not specified in the 2024 paper,
 # filled in by us. Logged in the decision log.
 # --------------------------------------------------
-F1 = 1.0  # RMSE weight
+F1 = 2.0  # RMSE weight
 F2 = 0.1  # number of holes weight
 
 

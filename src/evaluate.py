@@ -7,7 +7,7 @@ from environment import DrillEnv
 env = DrillEnv()
 
 model = PPO.load(
-    "ppo_drill_baseline_200k"
+    "ppo_drill_baseline_f1_2"
 )
 
 all_holes = []

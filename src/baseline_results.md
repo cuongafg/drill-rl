@@ -1,10 +1,17 @@
-First PPO baseline
+# PPO Baseline Results
 
-Timesteps: 10,000
+10k PPO
+holes = 7.0
+rmse  = 0.889
 
-Mean holes: 7.0
-Mean RMSE: 0.889
+50k PPO
+holes = 7.0
+rmse  = 0.894
 
-Paper reference:
-Mean holes: ~7.0
-Mean RMSE: ~0.73
+200k PPO
+holes = 7.0
+rmse  = 0.834
+
+Paper reference
+holes ≈ 7.0
+rmse  ≈ 0.73

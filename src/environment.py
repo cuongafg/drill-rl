@@ -11,7 +11,7 @@ FIELD_POOL_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "..",
     "data",
-    "field_pool_train.npy"
+    "field_pool_eval.npy"
 )
 
 _FIELD_POOL = None

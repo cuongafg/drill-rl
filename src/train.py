@@ -11,9 +11,9 @@ model = PPO(
 )
 
 model.learn(
-    total_timesteps=10000
+    total_timesteps=50000
 )
 
 model.save(
-    "ppo_drill_baseline"
+    "ppo_drill_baseline_50k"
 )

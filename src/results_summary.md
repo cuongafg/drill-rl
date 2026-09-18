@@ -15,3 +15,14 @@ Even Spacing         9.00      0.711
 PPO                  7.00      0.834
 A2C                  7.00      0.896
 DQN                  7.00      0.933
+
+
+We force  7 holes
+Method              Holes      RMSE
+-------------------------------------
+PPO                  7.00      0.834
+Even Spacing         7.00      0.873
+PPO                  7.00      1.506
+
+
+On synthetic GemPy-generated soil fields, PPO achieved the best performance among the evaluated DRL methods (PPO, A2C, DQN), obtaining an average of 7 boreholes with RMSE 0.834. While Random and Even Spacing achieved lower RMSE when allowed to use more boreholes, a fair comparison at the same borehole budget (7 boreholes) showed that PPO outperformed both Random (RMSE 1.506) and Even Spacing (RMSE 0.873). This indicates that PPO learns more effective borehole placement strategies than simple baselines under equal cost constraints.

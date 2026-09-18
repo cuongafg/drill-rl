@@ -3,18 +3,18 @@ import numpy as np
 
 from stable_baselines3 import PPO
 
-from environment import DrillEnv
+from environment_eval import DrillEnv
 
 env = DrillEnv()
 
 model = PPO.load(
-    "ppo_drill_baseline_f1_5"
+    "ppo_drill_baseline_200k"
 )
 
 all_holes = []
 all_rmse = []
 
-for episode in range(20):
+for episode in range(100):
 
     obs, info = env.reset()
 

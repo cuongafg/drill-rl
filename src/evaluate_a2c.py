@@ -3,7 +3,7 @@ import numpy as np
 
 from stable_baselines3 import A2C
 
-from environment import DrillEnv
+from environment_eval import DrillEnv
 
 env = DrillEnv()
 
@@ -14,7 +14,7 @@ model = A2C.load(
 all_holes = []
 all_rmse = []
 
-for episode in range(20):
+for episode in range(100):
 
     obs, info = env.reset()
 

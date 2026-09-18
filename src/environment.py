@@ -11,7 +11,7 @@ FIELD_POOL_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "..",
     "data",
-    "field_pool_eval.npy"
+    "field_pool_train.npy"
 )
 
 _FIELD_POOL = None
@@ -34,7 +34,7 @@ ACTIONS = [2, 4, 8, 12, 16]
 # Reward weights — not specified in the 2024 paper,
 # filled in by us. Logged in the decision log.
 # --------------------------------------------------
-F1 = 5.0  # RMSE weight
+F1 = 1.0  # RMSE weight
 F2 = 0.1  # number of holes weight
 
 

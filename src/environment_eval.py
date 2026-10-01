@@ -1,10 +1,9 @@
-# src/environment.py
+# src/environment_eval.py
 import os
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 from scipy.interpolate import interp1d
-from soil_field import generate_soil_field
 
 
 FIELD_POOL_PATH = os.path.join(
@@ -43,33 +42,31 @@ class DrillEnv(gym.Env):
         super().__init__()
         self.action_space = spaces.Discrete(len(ACTIONS))
         self.observation_space = spaces.Box(
-            low=np.array([0, 1, 0], dtype=np.float32),
+            low=np.array([0, 0, 0], dtype=np.float32),
             high=np.array([100, 6, 5], dtype=np.float32),
             dtype=np.float32,
         )
+        self.field = None
+        self.position = 0
+        self.drilled_columns = []
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         pool = _load_pool()
 
-        idx = self.np_random.integers(
-            0,
-            len(pool)
-        )
-
-        self.field = pool[idx]
+        idx = self.np_random.integers(0, len(pool))
+        self.field = np.asarray(pool[idx])
         self.position = 0
         self.drilled_columns = [0]
         return self._get_obs(), {}
 
     def step(self, action_idx):
         distance = ACTIONS[action_idx]
+        max_position = self.field.shape[0] - 1 if self.field.ndim == 3 else self.field.shape[1] - 1
         new_position = self.position + distance
 
-        if new_position >= self.field.shape[1]:
-            # Ran off the edge of the field: episode ends, but no
-            # drill happens here — do NOT count this as a hole.
-            self.position = self.field.shape[1] - 1
+        if new_position >= max_position:
+            self.position = max_position
             terminated = True
         else:
             self.position = new_position
@@ -82,20 +79,45 @@ class DrillEnv(gym.Env):
         reward = -(F1 * rmse + F2 * num_holes)
 
         info = {"rmse": rmse, "num_holes": num_holes}
-
         return self._get_obs(), reward, terminated, False, info
 
     def _get_obs(self):
+        if self.field.ndim == 3:
+            slice_2d = self.field[self.position, :, :]
+            mean_ic = float(slice_2d.mean())
+            std_ic = float(slice_2d.std())
+            return np.array([self.position, mean_ic, std_ic], dtype=np.float32)
+
         col = self.field[:, self.position]
-        mean_ic = col.mean()
-        std_ic = col.std()
+        mean_ic = float(col.mean())
+        std_ic = float(col.std())
         return np.array([self.position, mean_ic, std_ic], dtype=np.float32)
 
     def _compute_rmse(self):
         if len(self.drilled_columns) < 2:
             return 5.0
 
-        known_x = np.array(self.drilled_columns)
+        known_x = np.asarray(self.drilled_columns, dtype=np.int64)
+
+        if self.field.ndim == 3:
+            x_size = self.field.shape[0]
+            interpolated = np.zeros_like(self.field, dtype=np.float64)
+            for y in range(self.field.shape[1]):
+                for z in range(self.field.shape[2]):
+                    known_y = self.field[known_x, y, z]
+                    if known_y.size == 0:
+                        continue
+                    f = interp1d(
+                        known_x,
+                        known_y,
+                        kind="linear",
+                        bounds_error=False,
+                        fill_value=(known_y[0], known_y[-1]),
+                    )
+                    interpolated[:, y, z] = f(np.arange(x_size))
+            rmse = np.sqrt(np.mean((interpolated - self.field) ** 2))
+            return float(rmse)
+
         field_rows = self.field.shape[0]
         field_cols = self.field.shape[1]
         interpolated = np.zeros_like(self.field, dtype=np.float64)

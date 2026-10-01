@@ -4,7 +4,7 @@ import numpy as np
 from soil_field import generate_soil_field
 
 
-def main(n_fields, seed_start, out_path):
+def main(n_fields, seed_start, out_path, mode):
 
     fields = []
 
@@ -14,11 +14,10 @@ def main(n_fields, seed_start, out_path):
 
         print(
             f"Generating field {i+1}/{n_fields} "
-            f"(seed={seed})"
+            f"(seed={seed}, mode={mode})"
         )
 
-        field = generate_soil_field(seed=seed)
-
+        field = generate_soil_field(seed=seed, mode=mode)
         fields.append(field)
 
     pool = np.stack(fields)
@@ -47,6 +46,12 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--mode",
+        choices=["2d", "3d"],
+        default="2d"
+    )
+
+    parser.add_argument(
         "--out",
         type=str,
         default="../data/field_pool_train.npy"
@@ -57,5 +62,6 @@ if __name__ == "__main__":
     main(
         args.n,
         args.seed_start,
-        args.out
+        args.out,
+        args.mode,
     )

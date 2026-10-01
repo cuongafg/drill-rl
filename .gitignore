@@ -8,6 +8,7 @@ wheels/
 
 # Generated project artifacts
 /data/*.png
+/data/*.npz
 /data/*.npy
 /data/*.csv
 /src/*.png

@@ -12,13 +12,16 @@ def test_origin_and_depth_bounds():
 
 def test_coordinate_conversion_round_trip():
     grid = Grid3D(nx=101, ny=101, nz=11)
-    world = (25.0, 40.0, -5.0)
+    x = grid.x_coords[25]
+    y = grid.y_coords[40]
+    z = grid.z_coords[5]
+    world = (x, y, z)
     idx = grid.world_to_index(*world)
     back = grid.index_to_world(*idx)
     assert idx == (25, 40, 5)
-    assert back[0] == 25.0
-    assert back[1] == 40.0
-    assert back[2] == -5.0
+    assert back[0] == x
+    assert back[1] == y
+    assert back[2] == z
 
 
 def test_generated_volume_shape():

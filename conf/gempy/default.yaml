@@ -1,0 +1,11 @@
+extent: [0, 100, 0, 100, 0, 10]
+refinement: 1
+orientation_points: 3
+surface_points: 100
+formations: [s1, s2, s3, s4]
+point_margin: 1.0
+legacy_2d_resolution: [100, 1, 10]
+legacy_2d_y_index: 0
+azimuth_range: [0.0, 360.0]
+dip_range: [0.0, 90.0]
+polarity_values: [-1, 1]

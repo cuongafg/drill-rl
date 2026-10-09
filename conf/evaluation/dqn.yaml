@@ -1,0 +1,4 @@
+episodes: 100
+deterministic: true
+algorithm: dqn
+model_name: DQN_baseline

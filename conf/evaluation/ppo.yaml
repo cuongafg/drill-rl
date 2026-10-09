@@ -1,0 +1,4 @@
+episodes: 100
+deterministic: true
+algorithm: ppo
+model_name: ppo_drill_baseline_200k

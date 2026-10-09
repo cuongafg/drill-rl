@@ -1,50 +1,13 @@
+import hydra
+from omegaconf import DictConfig
 
-import numpy as np
+from evaluation import evaluate
 
-from stable_baselines3 import DQN
 
-from environment_eval import DrillEnv
+@hydra.main(version_base=None, config_path="../conf", config_name="evaluate_dqn")
+def main(cfg: DictConfig) -> None:
+    evaluate(cfg)
 
-env = DrillEnv()
 
-model = DQN.load(
-    "dqn_baseline"
-)
-
-all_holes = []
-all_rmse = []
-
-for episode in range(100):
-
-    obs, info = env.reset()
-
-    terminated = False
-
-    while not terminated:
-
-        action, _ = model.predict(
-            obs,
-            deterministic=True
-        )
-
-        obs, reward, terminated, truncated, info = env.step(
-            action
-        )
-
-    all_holes.append(
-        info["num_holes"]
-    )
-
-    all_rmse.append(
-        info["rmse"]
-    )
-
-print(
-    "Mean holes:",
-    np.mean(all_holes)
-)
-
-print(
-    "Mean RMSE:",
-    np.mean(all_rmse)
-)
+if __name__ == "__main__":
+    main()

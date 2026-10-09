@@ -1,0 +1,5 @@
+episodes: 100
+deterministic: true
+model_ppo: ppo_drill_baseline_200k
+model_a2c: a2c_baseline
+model_dqn: dqn_baseline

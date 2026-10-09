@@ -1,0 +1,7 @@
+name: even_spacing
+episodes: 100
+strategy: sequence
+target_holes: null
+random_action_max: 4
+action_sequence: [3, 3, 3, 3, 3, 3, 3]
+fallback_action: 3

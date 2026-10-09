@@ -1,17 +1,20 @@
-import subprocess
+import hydra
+from omegaconf import DictConfig, OmegaConf
 
-scripts = [
-    "train_ppo.py",
-    "train_a2c.py",
-    "train_dqn.py",
-]
+from configuration import CONFIG_DIR
+from training import train
 
-for script in scripts:
-    print("\n" + "=" * 60)
-    print(f"Running {script}")
-    print("=" * 60)
 
-    subprocess.run(
-        ["python", script],
-        check=True
-    )
+@hydra.main(version_base=None, config_path="../conf", config_name="config")
+def main(cfg: DictConfig) -> None:
+    for algorithm in cfg.orchestration.training_algorithms:
+        agent_cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
+        agent_cfg.training = OmegaConf.load(
+            CONFIG_DIR / "training" / f"{algorithm}.yaml"
+        )
+        print(f"Training {str(algorithm).upper()}")
+        train(agent_cfg)
+
+
+if __name__ == "__main__":
+    main()

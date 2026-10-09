@@ -1,0 +1,4 @@
+episodes: 100
+deterministic: true
+algorithm: a2c
+model_name: a2c_baseline

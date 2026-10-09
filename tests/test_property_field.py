@@ -65,11 +65,11 @@ def test_reproducibility():
     assert not np.allclose(a, field_a.generate(seed=6))
 
 
-def test_save_load_round_trip():
+def test_save_load_round_trip(tmp_path):
     field = PropertyField3D(nx=9, ny=11, nz=5, property_range=(0.0, 100.0), seed=99)
     field.generate(seed=99)
 
-    path = "/tmp/property_field_roundtrip.npz"
+    path = tmp_path / "property_field_roundtrip.npz"
     field.save(path)
     restored = PropertyField3D.load(path)
 
@@ -80,14 +80,12 @@ def test_save_load_round_trip():
     assert restored.grid.z_coords[-1] == -10.0
 
 
-def test_visualization_writes_3d_ground_truth_summary():
+def test_visualization_writes_3d_ground_truth_summary(tmp_path):
     field = PropertyField3D(nx=15, ny=13, nz=11, seed=33)
     field.generate()
-    output_path = "/tmp/property_field_geology.png"
+    output_path = tmp_path / "property_field_geology.png"
 
     figure = field.visualize_3d(output_path)
 
     assert figure is not None
-    from pathlib import Path
-
-    assert Path(output_path).is_file()
+    assert output_path.is_file()

@@ -1,19 +1,13 @@
-from stable_baselines3 import PPO
+import hydra
+from omegaconf import DictConfig
 
-from environment import DrillEnv
+from training import train
 
-env = DrillEnv()
 
-model = PPO(
-    "MlpPolicy",
-    env,
-    verbose=1
-)
+@hydra.main(version_base=None, config_path="../conf", config_name="train_ppo")
+def main(cfg: DictConfig) -> None:
+    train(cfg)
 
-model.learn(
-    total_timesteps=200000
-)
 
-model.save(
-    "ppo_drill_baseline_f1_5"
-)
+if __name__ == "__main__":
+    main()

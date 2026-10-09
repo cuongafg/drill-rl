@@ -1,49 +1,28 @@
 # src/environment_eval.py
-import os
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 from scipy.interpolate import interp1d
 
+from configuration import as_dict, load_config_section, project_path
 
-FIELD_POOL_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "..",
-    "data",
-    "field_pool_eval.npy"
-)
-
-_FIELD_POOL = None
-
-
-def _load_pool():
-    global _FIELD_POOL
-
-    if _FIELD_POOL is None:
-        _FIELD_POOL = np.load(FIELD_POOL_PATH)
-
-    return _FIELD_POOL
-
-# --------------------------------------------------
-# Action space from the paper
-# --------------------------------------------------
-ACTIONS = [2, 4, 8, 12, 16]
-
-# --------------------------------------------------
-# Reward weights — not specified in the 2024 paper,
-# filled in by us. Logged in the decision log.
-# --------------------------------------------------
-F1 = 1.0  # RMSE weight
-F2 = 0.1  # number of holes weight
+from environment import _load_pool
 
 
 class DrillEnv(gym.Env):
-    def __init__(self):
+    def __init__(self, config=None):
         super().__init__()
-        self.action_space = spaces.Discrete(len(ACTIONS))
+        self.config = load_config_section("environment") if config is None else as_dict(config)
+        self.actions = [int(action) for action in self.config["actions"]]
+        self.rmse_weight = float(self.config["reward"]["rmse_weight"])
+        self.borehole_weight = float(self.config["reward"]["borehole_weight"])
+        self.initial_rmse = float(self.config["reward"]["initial_rmse"])
+        self.initial_position = int(self.config["initial_position"])
+        self.pool_paths = [project_path(self.config["eval_pool"])]
+        self.action_space = spaces.Discrete(len(self.actions))
         self.observation_space = spaces.Box(
-            low=np.array([0, 0, 0], dtype=np.float32),
-            high=np.array([100, 6, 5], dtype=np.float32),
+            low=np.asarray(self.config["observation"]["low"], dtype=np.float32),
+            high=np.asarray(self.config["observation"]["high"], dtype=np.float32),
             dtype=np.float32,
         )
         self.field = None
@@ -52,16 +31,16 @@ class DrillEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        pool = _load_pool()
+        pool = _load_pool(self.pool_paths)
 
         idx = self.np_random.integers(0, len(pool))
         self.field = np.asarray(pool[idx])
-        self.position = 0
-        self.drilled_columns = [0]
+        self.position = self.initial_position
+        self.drilled_columns = [self.initial_position]
         return self._get_obs(), {}
 
     def step(self, action_idx):
-        distance = ACTIONS[action_idx]
+        distance = self.actions[int(action_idx)]
         max_position = self.field.shape[0] - 1 if self.field.ndim == 3 else self.field.shape[1] - 1
         new_position = self.position + distance
 
@@ -76,7 +55,7 @@ class DrillEnv(gym.Env):
 
         rmse = self._compute_rmse()
         num_holes = len(self.drilled_columns)
-        reward = -(F1 * rmse + F2 * num_holes)
+        reward = -(self.rmse_weight * rmse + self.borehole_weight * num_holes)
 
         info = {"rmse": rmse, "num_holes": num_holes}
         return self._get_obs(), reward, terminated, False, info
@@ -95,7 +74,7 @@ class DrillEnv(gym.Env):
 
     def _compute_rmse(self):
         if len(self.drilled_columns) < 2:
-            return 5.0
+            return self.initial_rmse
 
         known_x = np.asarray(self.drilled_columns, dtype=np.int64)
 

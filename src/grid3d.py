@@ -1,31 +1,49 @@
 import numpy as np
 
+from configuration import load_config_file
+
 
 class Grid3D:
     """Physical 3D Cartesian grid aligned with the geological site."""
 
     def __init__(
         self,
-        nx=101,
-        ny=101,
-        nz=11,
-        x_min=0.0,
-        x_max=100.0,
-        y_min=0.0,
-        y_max=100.0,
-        z_min=0.0,
-        z_max=-10.0,
+        nx=None,
+        ny=None,
+        nz=None,
+        x_min=None,
+        x_max=None,
+        y_min=None,
+        y_max=None,
+        z_min=None,
+        z_max=None,
     ):
-        self.nx = int(nx)
-        self.ny = int(ny)
-        self.nz = int(nz)
+        defaults = load_config_file("grid/site.yaml")
+        values = {
+            "nx": nx,
+            "ny": ny,
+            "nz": nz,
+            "x_min": x_min,
+            "x_max": x_max,
+            "y_min": y_min,
+            "y_max": y_max,
+            "z_min": z_min,
+            "z_max": z_max,
+        }
+        for name, value in values.items():
+            if value is None:
+                values[name] = defaults[name]
+
+        self.nx = int(values["nx"])
+        self.ny = int(values["ny"])
+        self.nz = int(values["nz"])
 
         if self.nx < 1 or self.ny < 1 or self.nz < 1:
             raise ValueError("Grid dimensions must be positive integers.")
 
-        self.x_coords = np.linspace(x_min, x_max, self.nx)
-        self.y_coords = np.linspace(y_min, y_max, self.ny)
-        self.z_coords = np.linspace(z_min, z_max, self.nz)
+        self.x_coords = np.linspace(values["x_min"], values["x_max"], self.nx)
+        self.y_coords = np.linspace(values["y_min"], values["y_max"], self.ny)
+        self.z_coords = np.linspace(values["z_min"], values["z_max"], self.nz)
 
         self.x_min = float(self.x_coords[0])
         self.x_max = float(self.x_coords[-1])

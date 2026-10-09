@@ -1,0 +1,22 @@
+cmap: viridis
+bedrock_cmap: terrain
+qc_gamma: 0.45
+volume_max_x_samples: 31
+volume_max_y_samples: 31
+volume_max_z_samples: 17
+volume_aspect: [1.0, 1.0, 0.35]
+bedrock_aspect: [1.0, 1.0, 0.25]
+elevation: 24
+azimuth: -55
+preview_dpi: 180
+preview_figsize: [20, 10]
+gempy_preview_figsize: [10, 8]
+gempy_point_size: 8
+gempy_point_alpha: 0.8
+gempy_box_aspect: [1.0, 1.0, 0.7]
+gempy_elevation: 28
+gempy_azimuth: -45
+slice_figsize: [7, 6]
+section_figsize: [9, 5]
+colorbar_shrink: 0.78
+colorbar_pad: 0.02

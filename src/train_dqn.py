@@ -1,19 +1,13 @@
-from stable_baselines3 import DQN
+import hydra
+from omegaconf import DictConfig
 
-from environment import DrillEnv
+from training import train
 
-env = DrillEnv()
 
-model = DQN(
-    "MlpPolicy",
-    env,
-    verbose=1
-)
+@hydra.main(version_base=None, config_path="../conf", config_name="train_dqn")
+def main(cfg: DictConfig) -> None:
+    train(cfg)
 
-model.learn(
-    total_timesteps=200000
-)
 
-model.save(
-    "DQN_baseline"
-)
+if __name__ == "__main__":
+    main()

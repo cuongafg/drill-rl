@@ -1,0 +1,4 @@
+defaults:
+  - config
+  - override /training: a2c
+  - _self_

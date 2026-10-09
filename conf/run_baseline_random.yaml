@@ -1,0 +1,4 @@
+defaults:
+  - config
+  - override /baseline: random
+  - _self_

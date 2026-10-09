@@ -1,19 +1,13 @@
-from stable_baselines3 import A2C
+import hydra
+from omegaconf import DictConfig
 
-from environment import DrillEnv
+from training import train
 
-env = DrillEnv()
 
-model = A2C(
-    "MlpPolicy",
-    env,
-    verbose=1
-)
+@hydra.main(version_base=None, config_path="../conf", config_name="train_a2c")
+def main(cfg: DictConfig) -> None:
+    train(cfg)
 
-model.learn(
-    total_timesteps=200000
-)
 
-model.save(
-    "a2c_baseline"
-)
+if __name__ == "__main__":
+    main()

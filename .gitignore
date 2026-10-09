@@ -5,9 +5,11 @@ build/
 dist/
 wheels/
 *.egg-info
+*.log
 
 # Generated project artifacts
 /data/*.png
+/environment_visualisation/*.png
 /data/*.npz
 /data/*.npy
 /data/*.csv
@@ -17,3 +19,5 @@ wheels/
 
 # Virtual environments
 .venv
+/outputs/
+/reports/

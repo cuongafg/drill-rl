@@ -4,9 +4,11 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from omegaconf import OmegaConf
 from scipy.ndimage import gaussian_filter
 from scipy.special import expit
 
+from configuration import load_config_file
 from grid3d import Grid3D
 
 
@@ -30,22 +32,65 @@ class PropertyField3D:
 
     def __init__(
         self,
-        nx: int = 101,
-        ny: int = 101,
-        nz: int = 21,
-        x_min: float = 0.0,
-        x_max: float = 100.0,
-        y_min: float = 0.0,
-        y_max: float = 100.0,
-        z_min: float = 0.0,
-        z_max: float = -10.0,
-        property_name: str = "qc",
-        unit: str = "MPa",
-        property_range: tuple[float, float] = (0.0, 300.0),
+        nx: int | None = None,
+        ny: int | None = None,
+        nz: int | None = None,
+        x_min: float | None = None,
+        x_max: float | None = None,
+        y_min: float | None = None,
+        y_max: float | None = None,
+        z_min: float | None = None,
+        z_max: float | None = None,
+        property_name: str | None = None,
+        unit: str | None = None,
+        property_range: tuple[float, float] | None = None,
         seed: int | None = None,
-        lens_count: int = 24,
-        include_fault: bool = False,
+        lens_count: int | None = None,
+        include_fault: bool | None = None,
+        geology_config: dict[str, Any] | None = None,
+        visualization_config: dict[str, Any] | None = None,
     ) -> None:
+        self.geology_config = (
+            load_config_file("geology/realistic_qc.yaml")
+            if geology_config is None
+            else geology_config
+        )
+        self.visualization_config = (
+            load_config_file("visualization/default.yaml")
+            if visualization_config is None
+            else visualization_config
+        )
+        geology = self.geology_config
+        grid_settings = load_config_file("grid/site.yaml")
+        requested_grid = {
+            "nx": nx,
+            "ny": ny,
+            "nz": nz,
+            "x_min": x_min,
+            "x_max": x_max,
+            "y_min": y_min,
+            "y_max": y_max,
+            "z_min": z_min,
+            "z_max": z_max,
+        }
+        for name, value in requested_grid.items():
+            if value is None:
+                requested_grid[name] = grid_settings[name]
+        nx, ny, nz = (int(requested_grid[name]) for name in ("nx", "ny", "nz"))
+        x_min, x_max = requested_grid["x_min"], requested_grid["x_max"]
+        y_min, y_max = requested_grid["y_min"], requested_grid["y_max"]
+        z_min, z_max = requested_grid["z_min"], requested_grid["z_max"]
+        if lens_count is None:
+            lens_count = int(geology["lens_count"])
+        if include_fault is None:
+            include_fault = bool(geology["include_fault"])
+        if property_name is None:
+            property_name = str(geology["property_name"])
+        if unit is None:
+            unit = str(geology["unit"])
+        if property_range is None:
+            property_range = tuple(float(value) for value in geology["property_range"])
+
         self.grid = Grid3D(
             nx=nx,
             ny=ny,
@@ -124,22 +169,37 @@ class PropertyField3D:
         y_grid: np.ndarray,
     ) -> np.ndarray:
         """Generate irregular bedrock depth (positive metres below ground)."""
-        broad = self._noise_2d(rng, (55.0, 48.0))
-        local = self._noise_2d(rng, (24.0, 20.0))
-        depth = 8.0 + 0.9 * broad + 0.25 * local
+        bedrock = self.geology_config["bedrock"]
+        correlation = self.geology_config["correlation"]
+        broad = self._noise_2d(rng, tuple(correlation["bedrock_broad"]))
+        local = self._noise_2d(rng, tuple(correlation["bedrock_local"]))
+        depth = (
+            float(bedrock["mean_depth"])
+            + float(bedrock["broad_relief"]) * broad
+            + float(bedrock["local_relief"]) * local
+        )
 
         # A broad, asymmetric paleo-valley provides site-scale geological relief.
-        center_x = rng.uniform(30.0, 70.0)
-        center_y = rng.uniform(30.0, 70.0)
+        center_x = rng.uniform(self.grid.x_min, self.grid.x_max)
+        center_y = rng.uniform(self.grid.y_min, self.grid.y_max)
         angle = rng.uniform(0.0, np.pi)
         dx = x_grid - center_x
         dy = y_grid - center_y
         along = dx * np.cos(angle) + dy * np.sin(angle)
         across = -dx * np.sin(angle) + dy * np.cos(angle)
-        valley = np.exp(-0.5 * ((along / rng.uniform(30.0, 48.0)) ** 2
-                                + (across / rng.uniform(10.0, 22.0)) ** 2))
-        depth -= rng.uniform(0.7, 1.5) * valley
-        depth = 7.8 + 1.8 * np.tanh((depth - 7.8) / 1.8)
+        valley_length = bedrock["valley_length"]
+        valley_width = bedrock["valley_width"]
+        valley = np.exp(
+            -0.5
+            * (
+                (along / rng.uniform(*valley_length)) ** 2
+                + (across / rng.uniform(*valley_width)) ** 2
+            )
+        )
+        depth -= rng.uniform(*bedrock["valley_depth"]) * valley
+        mean_depth = float(bedrock["mean_depth"])
+        relief_scale = float(bedrock["broad_relief"]) * 2.0
+        depth = mean_depth + relief_scale * np.tanh((depth - mean_depth) / relief_scale)
         return depth.astype(np.float32)
 
     @staticmethod
@@ -151,6 +211,8 @@ class PropertyField3D:
         radii: tuple[float, float, float],
         angle: float,
         boundary_noise: np.ndarray,
+        boundary_irregularity: float,
+        transition_steepness: float,
     ) -> np.ndarray:
         """Smooth asymmetric ellipsoid mask for a geological lens."""
         cx, cy, cd = center
@@ -164,8 +226,8 @@ class PropertyField3D:
             + (across / ry) ** 2
             + ((depth_grid - cd) / rd) ** 2
         )
-        irregular_distance = distance - 0.10 * boundary_noise
-        return expit((1.0 - irregular_distance) * 7.0).astype(np.float32)
+        irregular_distance = distance - boundary_irregularity * boundary_noise
+        return expit((1.0 - irregular_distance) * transition_steepness).astype(np.float32)
 
     def generate(
         self,
@@ -191,20 +253,25 @@ class PropertyField3D:
         x_grid, y_grid, depth_grid = np.meshgrid(x, y, depth, indexing="ij")
         depth_fraction = depth_grid / max(float(depth.max()), 1e-6)
 
-        broad_noise = self._noise_3d(rng, (42.0, 36.0, 3.8))
-        medium_noise = self._noise_3d(rng, (17.0, 14.0, 1.8))
-        fine_noise = self._noise_3d(rng, (6.0, 7.0, 0.8))
+        geology = self.geology_config
+        correlation = geology["correlation"]
+        background = geology["background"]
+        broad_noise = self._noise_3d(rng, tuple(correlation["broad"]))
+        medium_noise = self._noise_3d(rng, tuple(correlation["medium"]))
+        fine_noise = self._noise_3d(rng, tuple(correlation["fine"]))
         volumetric_variation = (
-            2.8 * broad_noise + 1.7 * medium_noise + 0.65 * fine_noise
+            float(background["broad_noise_weight"]) * broad_noise
+            + float(background["medium_noise_weight"]) * medium_noise
+            + float(background["fine_noise_weight"]) * fine_noise
         )
 
         # The background trend is depth-dependent; correlated 3D terms ensure
         # the field is not a 2D map extruded through depth.
         qc = (
-            6.0
-            + 17.0 * depth_fraction
+            float(background["qc_at_surface"])
+            + float(background["depth_increment"]) * depth_fraction
             + volumetric_variation
-            + 2.0 * depth_fraction * medium_noise
+            + float(background["depth_noise_weight"]) * depth_fraction * medium_noise
         ).astype(np.float32)
 
         bedrock = self._make_bedrock_surface(
@@ -220,25 +287,29 @@ class PropertyField3D:
                 -(x_grid[:, :, 0] - fault_x) * np.sin(fault_angle)
                 + (y_grid[:, :, 0] - fault_y) * np.cos(fault_angle)
             )
-            throw = rng.uniform(0.4, 1.0)
+            bedrock_settings = geology["bedrock"]
+            throw = rng.uniform(*bedrock_settings["fault_throw"])
             bedrock = np.clip(
                 bedrock + np.where(across_fault > 0.0, throw, -throw),
-                5.8,
-                9.7,
+                float(bedrock_settings["minimum_depth"]),
+                float(bedrock_settings["maximum_depth"]),
             ).astype(np.float32)
         self.bedrock_depth = bedrock
 
-        boundary_noise = self._noise_3d(rng, (13.0, 11.0, 1.2))
+        lens_settings = geology["lenses"]
+        boundary_noise = self._noise_3d(rng, tuple(correlation["boundaries"]))
         for lens_index in range(self.lens_count):
-            kind = rng.choice(("sand", "clay", "dense_sand"), p=(0.55, 0.28, 0.17))
+            kind = rng.choice(lens_settings["kinds"], p=lens_settings["probabilities"])
             center_x = rng.uniform(self.grid.x_min, self.grid.x_max)
             center_y = rng.uniform(self.grid.y_min, self.grid.y_max)
-            center_depth = rng.uniform(1.0, 7.3)
+            center_depth = rng.uniform(*lens_settings["depth"])
             radii = (
-                rng.uniform(8.0, 22.0),
-                rng.uniform(6.0, 18.0),
-                rng.uniform(0.55, 1.8),
+                rng.uniform(*lens_settings["radius_x"]),
+                rng.uniform(*lens_settings["radius_y"]),
+                rng.uniform(*lens_settings["radius_z"]),
             )
+            boundary_irregularity = float(lens_settings["boundary_irregularity"])
+            transition_steepness = float(lens_settings["transition_steepness"])
             mask = self._lens_mask(
                 x_grid,
                 y_grid,
@@ -247,50 +318,97 @@ class PropertyField3D:
                 radii,
                 rng.uniform(0.0, np.pi),
                 boundary_noise,
+                boundary_irregularity,
+                transition_steepness,
             )
             if kind == "clay":
-                target_qc = rng.uniform(2.8, 6.0) + 0.6 * medium_noise
+                target_qc = rng.uniform(*lens_settings["clay_qc"]) + float(
+                    lens_settings["boundary_clay_noise"]
+                ) * medium_noise
             elif kind == "dense_sand":
-                target_qc = rng.uniform(55.0, 82.0) + 3.0 * medium_noise
+                target_qc = rng.uniform(*lens_settings["dense_sand_qc"]) + float(
+                    lens_settings["boundary_dense_sand_noise"]
+                ) * medium_noise
             else:
-                target_qc = rng.uniform(20.0, 43.0) + 2.0 * medium_noise
+                target_qc = rng.uniform(*lens_settings["sand_qc"]) + float(
+                    lens_settings["boundary_sand_noise"]
+                ) * medium_noise
             qc = qc * (1.0 - mask) + target_qc.astype(np.float32) * mask
 
         # Localized dense sand bodies extend laterally while retaining vertical
         # thickness and irregular boundaries.
-        for _ in range(max(1, self.lens_count // 6)):
+        dense_settings = geology["dense_zones"]
+        dense_count = max(
+            int(dense_settings["minimum_count"]),
+            self.lens_count // int(dense_settings["count_per_six_lenses"]),
+        )
+        for _ in range(dense_count):
             center_x = rng.uniform(self.grid.x_min, self.grid.x_max)
             center_y = rng.uniform(self.grid.y_min, self.grid.y_max)
-            center_depth = rng.uniform(2.5, 7.0)
+            center_depth = rng.uniform(*dense_settings["depth"])
             mask = self._lens_mask(
                 x_grid,
                 y_grid,
                 depth_grid,
                 (center_x, center_y, center_depth),
-                (rng.uniform(15.0, 30.0), rng.uniform(9.0, 20.0), rng.uniform(0.7, 1.5)),
+                (
+                    rng.uniform(*dense_settings["radius_x"]),
+                    rng.uniform(*dense_settings["radius_y"]),
+                    rng.uniform(*dense_settings["radius_z"]),
+                ),
                 rng.uniform(0.0, np.pi),
                 boundary_noise,
+                boundary_irregularity,
+                transition_steepness,
             )
-            target_qc = 68.0 + 4.0 * broad_noise + 2.0 * medium_noise
+            target_qc = (
+                float(dense_settings["qc_mean"])
+                + float(dense_settings["broad_noise_weight"]) * broad_noise
+                + float(dense_settings["medium_noise_weight"]) * medium_noise
+            )
             qc = qc * (1.0 - mask) + target_qc * mask
 
         # Progressively weathered material transitions into high-resistance rock.
+        rock_settings = geology["rock"]
         bedrock_3d = bedrock[:, :, None]
         weathered_fraction = expit(
-            (depth_grid - (bedrock_3d - 2.0)) / 0.42
+            (
+                depth_grid
+                - (bedrock_3d - float(rock_settings["weathering_thickness"]))
+            )
+            / float(rock_settings["weathering_transition"])
         ).astype(np.float32)
         bedrock_fraction = expit(
-            (depth_grid - bedrock_3d) / 0.20
+            (depth_grid - bedrock_3d) / float(rock_settings["bedrock_transition"])
         ).astype(np.float32)
-        weathered_qc = np.clip(112.0 + 13.0 * broad_noise + 6.0 * medium_noise, 75.0, 165.0)
-        competent_rock_qc = np.clip(252.0 + 18.0 * broad_noise + 8.0 * fine_noise, 205.0, 300.0)
+        weathered_qc = np.clip(
+            float(rock_settings["weathered_qc_mean"])
+            + float(rock_settings["weathered_broad_noise_weight"]) * broad_noise
+            + float(rock_settings["weathered_medium_noise_weight"]) * medium_noise,
+            *rock_settings["weathered_qc_range"],
+        )
+        competent_rock_qc = np.clip(
+            float(rock_settings["competent_qc_mean"])
+            + float(rock_settings["competent_broad_noise_weight"]) * broad_noise
+            + float(rock_settings["competent_fine_noise_weight"]) * fine_noise,
+            *rock_settings["competent_qc_range"],
+        )
         qc = qc * (1.0 - weathered_fraction) + weathered_qc * weathered_fraction
         qc = qc * (1.0 - bedrock_fraction) + competent_rock_qc * bedrock_fraction
 
         # A surface deposit remains predominantly soft-to-medium qc while still
         # carrying gradual spatial variation.
-        surface_fraction = expit((1.25 - depth_grid) / 0.28).astype(np.float32)
-        surface_qc = np.clip(7.0 + 2.2 * broad_noise + 1.0 * medium_noise, 1.0, 14.0)
+        surface_settings = geology["surface"]
+        surface_fraction = expit(
+            (float(surface_settings["thickness"]) - depth_grid)
+            / float(surface_settings["transition"])
+        ).astype(np.float32)
+        surface_qc = np.clip(
+            float(surface_settings["qc_mean"])
+            + float(surface_settings["broad_noise_weight"]) * broad_noise
+            + float(surface_settings["medium_noise_weight"]) * medium_noise,
+            *surface_settings["qc_range"],
+        )
         qc = qc * (1.0 - surface_fraction) + surface_qc * surface_fraction
 
         self.field = np.clip(qc, *self.property_range).astype(np.float32)
@@ -316,6 +434,12 @@ class PropertyField3D:
             seed=np.asarray(-1 if self.seed is None else self.seed, dtype=np.int64),
             lens_count=np.asarray(self.lens_count, dtype=np.int64),
             include_fault=np.asarray(self.include_fault, dtype=np.bool_),
+            geology_config=np.asarray(
+                OmegaConf.to_yaml(OmegaConf.create(self.geology_config))
+            ),
+            visualization_config=np.asarray(
+                OmegaConf.to_yaml(OmegaConf.create(self.visualization_config))
+            ),
         )
         return str(destination)
 
@@ -344,6 +468,22 @@ class PropertyField3D:
                 if "include_fault" in loaded.files
                 else False
             )
+            geology_config = (
+                OmegaConf.to_container(
+                    OmegaConf.create(str(np.asarray(loaded["geology_config"]).item())),
+                    resolve=True,
+                )
+                if "geology_config" in loaded.files
+                else None
+            )
+            visualization_config = (
+                OmegaConf.to_container(
+                    OmegaConf.create(str(np.asarray(loaded["visualization_config"]).item())),
+                    resolve=True,
+                )
+                if "visualization_config" in loaded.files
+                else None
+            )
 
         obj = cls(
             nx=x_coords.size,
@@ -361,6 +501,8 @@ class PropertyField3D:
             seed=None if seed < 0 else seed,
             lens_count=lens_count,
             include_fault=include_fault,
+            geology_config=geology_config,
+            visualization_config=visualization_config,
         )
         if field.shape != (obj.grid.nx, obj.grid.ny, obj.grid.nz):
             raise ValueError("Saved field dimensions do not match the stored coordinate vectors.")
@@ -396,15 +538,15 @@ class PropertyField3D:
             raise ValueError("The field has not been generated yet. Call generate() first.")
         own_figure = ax is None
         if own_figure:
-            _, ax = plt.subplots(figsize=(7, 6))
+            _, ax = plt.subplots(figsize=tuple(self.visualization_config["slice_figsize"]))
         iz = int(np.argmin(np.abs(self.grid.z_coords - z)))
         image = ax.imshow(
             self.field[:, :, iz].T,
             origin="lower",
             aspect="equal",
-            cmap="viridis",
+            cmap=self.visualization_config["cmap"],
             norm=PowerNorm(
-                gamma=0.45,
+                gamma=float(self.visualization_config["qc_gamma"]),
                 vmin=float(self.field.min()),
                 vmax=float(self.field.max()),
             ),
@@ -416,7 +558,11 @@ class PropertyField3D:
         if output_path is not None:
             destination = Path(output_path)
             destination.parent.mkdir(parents=True, exist_ok=True)
-            ax.figure.savefig(destination, dpi=180, bbox_inches="tight")
+            ax.figure.savefig(
+                destination,
+                dpi=int(self.visualization_config["preview_dpi"]),
+                bbox_inches="tight",
+            )
         return ax
 
     def plot_vertical_section(
@@ -437,7 +583,7 @@ class PropertyField3D:
             raise ValueError("plane must be 'xz' or 'yz'.")
         own_figure = ax is None
         if own_figure:
-            _, ax = plt.subplots(figsize=(9, 5))
+            _, ax = plt.subplots(figsize=tuple(self.visualization_config["section_figsize"]))
         if plane == "xz":
             coordinate = float(self.grid.y_coords[self.grid.ny // 2] if coordinate is None else coordinate)
             iy = int(np.argmin(np.abs(self.grid.y_coords - coordinate)))
@@ -459,9 +605,9 @@ class PropertyField3D:
             section,
             origin="upper",
             aspect="auto",
-            cmap="viridis",
+            cmap=self.visualization_config["cmap"],
             norm=PowerNorm(
-                gamma=0.45,
+                gamma=float(self.visualization_config["qc_gamma"]),
                 vmin=float(self.field.min()),
                 vmax=float(self.field.max()),
             ),
@@ -479,7 +625,11 @@ class PropertyField3D:
         if output_path is not None:
             destination = Path(output_path)
             destination.parent.mkdir(parents=True, exist_ok=True)
-            ax.figure.savefig(destination, dpi=180, bbox_inches="tight")
+            ax.figure.savefig(
+                destination,
+                dpi=int(self.visualization_config["preview_dpi"]),
+                bbox_inches="tight",
+            )
         return ax
 
     def plot_bedrock_surface(
@@ -494,13 +644,13 @@ class PropertyField3D:
             raise ValueError("Generate the field before plotting its bedrock surface.")
         own_figure = ax is None
         if own_figure:
-            _, ax = plt.subplots(figsize=(7, 6))
+            _, ax = plt.subplots(figsize=tuple(self.visualization_config["slice_figsize"]))
         elevation = -self.bedrock_depth.T
         image = ax.imshow(
             elevation,
             origin="lower",
             aspect="equal",
-            cmap="terrain",
+            cmap=self.visualization_config["bedrock_cmap"],
             extent=[self.grid.x_min, self.grid.x_max, self.grid.y_min, self.grid.y_max],
         )
         ax.set(title="Bedrock surface elevation", xlabel="X (m)", ylabel="Y (m)")
@@ -509,13 +659,17 @@ class PropertyField3D:
         if output_path is not None:
             destination = Path(output_path)
             destination.parent.mkdir(parents=True, exist_ok=True)
-            ax.figure.savefig(destination, dpi=180, bbox_inches="tight")
+            ax.figure.savefig(
+                destination,
+                dpi=int(self.visualization_config["preview_dpi"]),
+                bbox_inches="tight",
+            )
         return ax
 
     def visualize_3d(
         self,
         output_path: str | Path | None = None,
-        figsize: tuple[float, float] = (20, 10),
+        figsize: tuple[float, float] | None = None,
     ) -> Any:
         """Create the required depth slices, sections, 3D volume, and bedrock map."""
         import matplotlib
@@ -528,7 +682,12 @@ class PropertyField3D:
         if self.field is None or self.bedrock_depth is None:
             raise ValueError("Generate the field before visualizing it.")
 
-        fig = plt.figure(figsize=figsize, constrained_layout=True)
+        figure_size = (
+            tuple(self.visualization_config["preview_figsize"])
+            if figsize is None
+            else figsize
+        )
+        fig = plt.figure(figsize=figure_size, constrained_layout=True)
         layout = fig.add_gridspec(2, 4)
         axes = [
             [fig.add_subplot(layout[0, column]) for column in range(4)],
@@ -546,15 +705,40 @@ class PropertyField3D:
         self.plot_vertical_section("yz", ax=axes[1][1])
 
         volume_ax = axes[1][2]
-        x_idx = np.unique(np.linspace(0, self.grid.nx - 1, min(self.grid.nx, 31), dtype=int))
-        y_idx = np.unique(np.linspace(0, self.grid.ny - 1, min(self.grid.ny, 31), dtype=int))
-        z_idx = np.unique(np.linspace(0, self.grid.nz - 1, min(self.grid.nz, 17), dtype=int))
+        x_idx = np.unique(
+            np.linspace(
+                0,
+                self.grid.nx - 1,
+                min(self.grid.nx, int(self.visualization_config["volume_max_x_samples"])),
+                dtype=int,
+            )
+        )
+        y_idx = np.unique(
+            np.linspace(
+                0,
+                self.grid.ny - 1,
+                min(self.grid.ny, int(self.visualization_config["volume_max_y_samples"])),
+                dtype=int,
+            )
+        )
+        z_idx = np.unique(
+            np.linspace(
+                0,
+                self.grid.nz - 1,
+                min(self.grid.nz, int(self.visualization_config["volume_max_z_samples"])),
+                dtype=int,
+            )
+        )
         x = self.grid.x_coords[x_idx]
         y = self.grid.y_coords[y_idx]
         z_indices = z_idx[::-1]
         z = self.grid.z_coords[z_indices]
-        cmap = plt.get_cmap("viridis")
-        norm = PowerNorm(gamma=0.45, vmin=float(self.field.min()), vmax=float(self.field.max()))
+        cmap = plt.get_cmap(self.visualization_config["cmap"])
+        norm = PowerNorm(
+            gamma=float(self.visualization_config["qc_gamma"]),
+            vmin=float(self.field.min()),
+            vmax=float(self.field.max()),
+        )
 
         # Orthogonal cut planes reveal interior geology instead of hiding it
         # behind the opaque outer faces of a filled voxel block.
@@ -601,8 +785,11 @@ class PropertyField3D:
             ylim=(self.grid.y_min, self.grid.y_max),
             zlim=(float(np.min(self.grid.z_coords)), float(np.max(self.grid.z_coords))),
         )
-        volume_ax.set_box_aspect((1.0, 1.0, 0.35))
-        volume_ax.view_init(elev=24, azim=-55)
+        volume_ax.set_box_aspect(self.visualization_config["volume_aspect"])
+        volume_ax.view_init(
+            elev=int(self.visualization_config["elevation"]),
+            azim=int(self.visualization_config["azimuth"]),
+        )
 
         bedrock_ax = axes[1][3]
         x_mesh, y_mesh = np.meshgrid(self.grid.x_coords, self.grid.y_coords, indexing="ij")
@@ -610,7 +797,7 @@ class PropertyField3D:
             x_mesh,
             y_mesh,
             -self.bedrock_depth,
-            cmap="terrain",
+            cmap=self.visualization_config["bedrock_cmap"],
             linewidth=0,
             antialiased=True,
         )
@@ -623,26 +810,33 @@ class PropertyField3D:
             ylim=(self.grid.y_min, self.grid.y_max),
             zlim=(float(np.min(self.grid.z_coords)), 0.0),
         )
-        bedrock_ax.set_box_aspect((1.0, 1.0, 0.25))
-        bedrock_ax.view_init(elev=24, azim=-55)
+        bedrock_ax.set_box_aspect(self.visualization_config["bedrock_aspect"])
+        bedrock_ax.view_init(
+            elev=int(self.visualization_config["elevation"]),
+            azim=int(self.visualization_config["azimuth"]),
+        )
 
         colorbar = fig.colorbar(
             ScalarMappable(norm=norm, cmap=cmap),
             ax=[*axes[0], axes[1][0], axes[1][1], volume_ax],
-            shrink=0.78,
-            pad=0.02,
+            shrink=float(self.visualization_config["colorbar_shrink"]),
+            pad=float(self.visualization_config["colorbar_pad"]),
         )
         colorbar.set_label(f"{self.property_name} ({self.unit})")
         if output_path is not None:
             destination = Path(output_path)
             destination.parent.mkdir(parents=True, exist_ok=True)
-            fig.savefig(destination, dpi=180, bbox_inches="tight")
+            fig.savefig(
+                destination,
+                dpi=int(self.visualization_config["preview_dpi"]),
+                bbox_inches="tight",
+            )
         return fig
 
     def visualize(
         self,
         output_path: str | Path | None = None,
-        figsize: tuple[float, float] = (20, 10),
+        figsize: tuple[float, float] | None = None,
     ) -> Any:
         """Backward-compatible alias for :meth:`visualize_3d`."""
         return self.visualize_3d(output_path=output_path, figsize=figsize)

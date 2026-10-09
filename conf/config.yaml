@@ -1,0 +1,22 @@
+defaults:
+  - grid: site
+  - geology: realistic_qc
+  - environment: default
+  - paths: default
+  - field_pool: default
+  - training: ppo
+  - evaluation: default
+  - baseline: default
+  - gempy: default
+  - visualization: default
+  - orchestration: default
+  - _self_
+
+seed: 42
+
+hydra:
+  run:
+    dir: .
+  output_subdir: null
+  job:
+    chdir: false

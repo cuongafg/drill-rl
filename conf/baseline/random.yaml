@@ -1,0 +1,7 @@
+name: random
+episodes: 100
+strategy: random
+target_holes: null
+random_action_max: 4
+action_sequence: []
+fallback_action: 3

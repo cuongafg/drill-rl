@@ -1,0 +1,80 @@
+property_name: qc
+unit: MPa
+property_range: [0.0, 300.0]
+lens_count: 24
+include_fault: false
+
+correlation:
+  broad: [42.0, 36.0, 3.8]
+  medium: [17.0, 14.0, 1.8]
+  fine: [6.0, 7.0, 0.8]
+  boundaries: [13.0, 11.0, 1.2]
+  bedrock_broad: [55.0, 48.0]
+  bedrock_local: [24.0, 20.0]
+
+background:
+  qc_at_surface: 6.0
+  depth_increment: 17.0
+  broad_noise_weight: 2.8
+  medium_noise_weight: 1.7
+  fine_noise_weight: 0.65
+  depth_noise_weight: 2.0
+
+bedrock:
+  mean_depth: 8.0
+  broad_relief: 0.9
+  local_relief: 0.25
+  valley_depth: [0.7, 1.5]
+  valley_length: [30.0, 48.0]
+  valley_width: [10.0, 22.0]
+  minimum_depth: 5.8
+  maximum_depth: 9.7
+  fault_throw: [0.4, 1.0]
+
+lenses:
+  kinds: [sand, clay, dense_sand]
+  probabilities: [0.55, 0.28, 0.17]
+  depth: [1.0, 7.3]
+  radius_x: [8.0, 22.0]
+  radius_y: [6.0, 18.0]
+  radius_z: [0.55, 1.8]
+  boundary_irregularity: 0.10
+  transition_steepness: 7.0
+  boundary_sand_noise: 2.0
+  boundary_clay_noise: 0.6
+  boundary_dense_sand_noise: 3.0
+  sand_qc: [20.0, 43.0]
+  clay_qc: [2.8, 6.0]
+  dense_sand_qc: [55.0, 82.0]
+
+dense_zones:
+  minimum_count: 1
+  count_per_six_lenses: 6
+  depth: [2.5, 7.0]
+  radius_x: [15.0, 30.0]
+  radius_y: [9.0, 20.0]
+  radius_z: [0.7, 1.5]
+  qc_mean: 68.0
+  broad_noise_weight: 4.0
+  medium_noise_weight: 2.0
+
+rock:
+  weathering_thickness: 2.0
+  weathering_transition: 0.42
+  bedrock_transition: 0.20
+  weathered_qc_mean: 112.0
+  weathered_broad_noise_weight: 13.0
+  weathered_medium_noise_weight: 6.0
+  weathered_qc_range: [75.0, 165.0]
+  competent_qc_mean: 252.0
+  competent_broad_noise_weight: 18.0
+  competent_fine_noise_weight: 8.0
+  competent_qc_range: [205.0, 300.0]
+
+surface:
+  thickness: 1.25
+  transition: 0.28
+  qc_mean: 7.0
+  broad_noise_weight: 2.2
+  medium_noise_weight: 1.0
+  qc_range: [1.0, 14.0]

@@ -1,0 +1,4 @@
+defaults:
+  - config
+  - override /evaluation: dqn
+  - _self_

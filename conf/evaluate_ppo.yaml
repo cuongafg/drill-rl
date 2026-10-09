@@ -1,0 +1,4 @@
+defaults:
+  - config
+  - override /evaluation: ppo
+  - _self_

@@ -1,0 +1,4 @@
+defaults:
+  - config
+  - override /evaluation: a2c
+  - _self_

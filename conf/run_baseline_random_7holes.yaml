@@ -1,0 +1,4 @@
+defaults:
+  - config
+  - override /baseline: random_7holes
+  - _self_

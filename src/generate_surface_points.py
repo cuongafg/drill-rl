@@ -1,14 +1,23 @@
-import csv
+import hydra
 import numpy as np
+from omegaconf import DictConfig
 
-Id = range(0, 100)
-x = np.random.uniform(1, 100, 100)
-y = np.random.uniform(1, 100, 100)
-z = np.random.uniform(1, 10, 100)
-formations = ['s1', 's2', 's3', 's4']
-formation = np.random.choice(formations, 100)
+from configuration import as_dict, project_path
+from generate_geology_csvs import write_surface_points
 
-with open('surface_points.csv', 'w') as file:
-    writer = csv.writer(file)
-    writer.writerow(('Id', 'X', 'Y', 'Z', 'Formation'))
-    writer.writerows(zip(Id, x, y, z, formation))
+
+@hydra.main(version_base=None, config_path="../conf", config_name="config")
+def main(cfg: DictConfig) -> None:
+    settings = as_dict(cfg.gempy)
+    write_surface_points(
+        project_path(str(cfg.paths.surface_points)),
+        np.random.default_rng(int(cfg.seed)),
+        n_points=int(settings["surface_points"]),
+        formations=settings["formations"],
+        extent=settings["extent"],
+        margin=float(settings["point_margin"]),
+    )
+
+
+if __name__ == "__main__":
+    main()

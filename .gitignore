@@ -5,6 +5,23 @@ build/
 dist/
 wheels/
 *.egg-info
+*.log
+
+# Generated project artifacts
+/data/*.png
+/environment_visualisation/*.png
+/data/*.npz
+/data/*.npy
+/data/*.csv
+/src/*.png
+/src/*.npy
+/src/*.csv
 
 # Virtual environments
 .venv
+/outputs/
+/reports/
+/local_models/
+
+#MacOS generated files
+.DS_Store

@@ -1,0 +1,4 @@
+defaults:
+  - config
+  - override /training: dqn
+  - _self_

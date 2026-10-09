@@ -1,0 +1,4 @@
+defaults:
+  - config
+  - override /baseline: even_spacing
+  - _self_

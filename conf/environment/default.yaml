@@ -1,0 +1,12 @@
+actions: [2, 4, 8, 12, 16]
+reward:
+  rmse_weight: 1.0
+  borehole_weight: 0.1
+  initial_rmse: 5.0
+observation:
+  low: [0.0, 0.0, 0.0]
+  high: [100.0, 300.0, 100.0]
+initial_position: 0
+train_pool: data/field_pool_train.npy
+train_pool_3d: data/field_pool_train_3d.npy
+eval_pool: data/field_pool_eval.npy

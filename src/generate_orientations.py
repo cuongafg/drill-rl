@@ -1,19 +1,26 @@
-import csv
+import hydra
 import numpy as np
-from sim2D import import_2d_env
+from omegaconf import DictConfig
 
-Id = range(0, 100)
-x = np.random.randint(1, 100, 3)
-y = np.random.randint(1, 100, 3)
-z = np.random.randint(1, 100, 3)
-azimuth = np.random.randint(1, 360, 3)
-dip = np.random.randint(0, 360, 3)
-polarity = np.random.choice([-1, 1], 3)
-formations = ['s1', 's2', 's3', 's4',]
-formation = np.random.choice(formations, 3)
+from configuration import as_dict, project_path
+from generate_geology_csvs import write_orientations
 
-with open('orientations.csv', 'w') as file:
-    writer = csv.writer(file)
-    writer.writerow(('X', 'Y', 'Z', 'Azimuth', 'Dip', 'Polarity', 'Formation'))
-    writer.writerows(zip(x, y, z, azimuth, dip, polarity, formation))
 
+@hydra.main(version_base=None, config_path="../conf", config_name="config")
+def main(cfg: DictConfig) -> None:
+    settings = as_dict(cfg.gempy)
+    write_orientations(
+        project_path(str(cfg.paths.orientations)),
+        np.random.default_rng(int(cfg.seed)),
+        n_points=int(settings["orientation_points"]),
+        formations=settings["formations"],
+        extent=settings["extent"],
+        margin=float(settings["point_margin"]),
+        azimuth_range=settings["azimuth_range"],
+        dip_range=settings["dip_range"],
+        polarity_values=settings["polarity_values"],
+    )
+
+
+if __name__ == "__main__":
+    main()

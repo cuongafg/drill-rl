@@ -1,0 +1,7 @@
+name: even_spacing_7holes
+episodes: 100
+strategy: fixed
+target_holes: 7
+random_action_max: 4
+action_sequence: []
+fallback_action: 4

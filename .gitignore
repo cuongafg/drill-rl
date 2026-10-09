@@ -22,3 +22,6 @@ wheels/
 /outputs/
 /reports/
 /local_models/
+
+#MacOS generated files
+.DS_Store

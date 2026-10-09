@@ -21,3 +21,4 @@ wheels/
 .venv
 /outputs/
 /reports/
+/local_models/

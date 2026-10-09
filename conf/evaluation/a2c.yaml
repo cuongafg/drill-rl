@@ -1,4 +1,5 @@
 episodes: 100
 deterministic: true
 algorithm: a2c
+model_run_id: a2c-baseline
 model_name: a2c_baseline

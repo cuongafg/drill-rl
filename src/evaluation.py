@@ -4,9 +4,9 @@ import numpy as np
 from omegaconf import DictConfig
 from stable_baselines3 import A2C, DQN, PPO
 
-from configuration import project_path
 from environment_eval import DrillEnv
 from experiment_reports import save_experiment_report
+from model_artifacts import model_checkpoint_filename, model_run_directory
 
 
 AGENT_TYPES = {"ppo": PPO, "a2c": A2C, "dqn": DQN}
@@ -17,8 +17,13 @@ def evaluate(cfg: DictConfig) -> None:
     algorithm = str(cfg.evaluation.algorithm).lower()
     if algorithm not in AGENT_TYPES:
         raise ValueError(f"Unsupported evaluation algorithm: {algorithm}")
-    model_path = project_path(
-        f"{cfg.paths.model_dir}/{cfg.evaluation.model_name}"
+    model_path = (
+        model_run_directory(
+            str(cfg.paths.model_dir),
+            algorithm,
+            str(cfg.evaluation.model_run_id),
+        )
+        / model_checkpoint_filename(str(cfg.evaluation.model_name))
     )
     model = AGENT_TYPES[algorithm].load(str(model_path))
     env = DrillEnv(cfg.environment)

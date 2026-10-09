@@ -1,5 +1,5 @@
 data_dir: data
-model_dir: src
+model_dir: local_models
 results_dir: reports/experiments
 ground_truth: data/realistic_qc_ground_truth.npz
 preview: environment_visualisation/realistic_qc_ground_truth.png

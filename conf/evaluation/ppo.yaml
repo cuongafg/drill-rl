@@ -1,4 +1,5 @@
 episodes: 100
 deterministic: true
 algorithm: ppo
+model_run_id: ppo-drill-baseline-200k
 model_name: ppo_drill_baseline_200k

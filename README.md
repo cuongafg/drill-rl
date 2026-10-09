@@ -58,6 +58,25 @@ uv run pytest
 
 To add pytest manually to an existing uv project, run `uv add --dev pytest`.
 
+## Model checkpoints
+
+Training saves each Stable-Baselines3 checkpoint in a unique directory such as
+`local_models/ppo/20261009T155400.123456Z-a1b2c3d4/`. The directory contains
+the configured checkpoint name (for example, `ppo_drill_baseline_200k.zip`),
+the resolved `config.yaml`, and a `metadata.json` with its run ID and algorithm.
+Use `evaluation.model_run_id` and `evaluation.model_name` in the selected
+`conf/evaluation/*.yaml` file to choose a checkpoint.
+
+New training runs and evaluation use `local_models/`, which is ignored by Git.
+Selected checkpoints in `shared_models/` are tracked for sharing. To evaluate a
+shared checkpoint, copy its run folder into the matching location under
+`local_models/` (for example,
+`cp -R shared_models/ppo/ppo-drill-baseline-200k local_models/ppo/`), then set
+the matching `evaluation.model_run_id` and `evaluation.model_name` values.
+Share additional selected checkpoints by adding them under `shared_models/` and
+committing them. For larger collections, use Git LFS or a shared artifact store
+instead of committing every run.
+
 ## Documentation and reports
 
 - `doc/` contains research-question analysis and experiment methodology.

@@ -9,6 +9,7 @@ defaults:
   - baseline: default
   - gempy: default
   - visualization: default
+  - environment/drilled_holes: default
   - orchestration: default
   - _self_
 

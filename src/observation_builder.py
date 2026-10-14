@@ -95,10 +95,37 @@ class CnnPatchObservationBuilder(LocalPatchObservationBuilder):
         return self.as_tensor(field, position, drilled_columns)
 
 
+@dataclass
+class FullObservedMapObservationBuilder(ObservationBuilder):
+    """Build a full observed map using all drilled holes collected so far.
+
+    This keeps the full field hidden for realism, while exposing to the policy a
+    cumulative knowledge map of the measurements that have been collected so far.
+    The resulting tensor is shaped [2, nx, ny, nz], where the first channel stores
+    measured qc values and the second stores a 0/1 mask for known vs unknown cells.
+    """
+
+    unknown_value: float = 0.0
+
+    def build(self, field: np.ndarray, position: int, drilled_columns: Sequence[int]) -> np.ndarray:
+        if field.ndim != 3:
+            raise ValueError("FullObservedMapObservationBuilder expects a 3D field array.")
+
+        observed = np.full(field.shape, self.unknown_value, dtype=np.float32)
+        mask = np.zeros(field.shape, dtype=np.float32)
+
+        for drilled_x in drilled_columns:
+            observed[drilled_x, :, :] = field[drilled_x, :, :]
+            mask[drilled_x, :, :] = 1.0
+
+        return np.stack([observed, mask], axis=0).astype(np.float32)
+
+
 BUILDER_TYPES = {
     "legacy": LegacyObservationBuilder,
     "local_patch": LocalPatchObservationBuilder,
     "cnn_patch": CnnPatchObservationBuilder,
+    "full_observed_map": FullObservedMapObservationBuilder,
 }
 
 
@@ -113,6 +140,10 @@ def build_observation_builder(mode: str, **kwargs: Any) -> ObservationBuilder:
     if builder_type in {LocalPatchObservationBuilder, CnnPatchObservationBuilder}:
         return builder_type(
             context_radius=int(kwargs.get("context_radius", 2)),
+            unknown_value=float(kwargs.get("unknown_value", 0.0)),
+        )
+    if builder_type is FullObservedMapObservationBuilder:
+        return builder_type(
             unknown_value=float(kwargs.get("unknown_value", 0.0)),
         )
 

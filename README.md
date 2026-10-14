@@ -85,6 +85,26 @@ This writes the field to `data/realistic_qc_ground_truth.npz` and the image to
 `environment_visualisation/realistic_qc_ground_truth.png`. The generator,
 field implementation, and output paths are configured in:
 
+### Make a drilled-hole preview with custom coordinates
+
+```bash
+uv run python src/generate_drilled_holes_preview.py
+```
+
+This uses the Hydra config in `conf/environment/drilled_holes/default.yaml` and
+saves the result to `environment_visualisation/drilled_holes_preview.png` by
+default. To override the hole positions from the command line:
+
+```bash
+uv run python src/generate_drilled_holes_preview.py \
+  environment/drilled_holes.positions='[[10.0, 20.0], [32.0, 55.0], [70.0, 82.0], [90.0, 40.0]]' \
+  environment/drilled_holes.z=0.0 \
+  environment/drilled_holes.output=environment_visualisation/my_holes.png
+```
+
+The same script can also be used to generate a deeper slice or a different set
+of illustrative borehole locations without editing the Python code.
+
 - `src/generate_environment.py` — command-line entry point.
 - `src/property_field.py` — geological field generation, sampling,
   serialization, and visualization.

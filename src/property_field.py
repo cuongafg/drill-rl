@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import numpy as np
 from omegaconf import OmegaConf
@@ -656,6 +656,112 @@ class PropertyField3D:
         ax.set(title="Bedrock surface elevation", xlabel="X (m)", ylabel="Y (m)")
         if own_figure:
             ax.figure.colorbar(image, ax=ax, label="Bedrock Z (m)")
+        if output_path is not None:
+            destination = Path(output_path)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            ax.figure.savefig(
+                destination,
+                dpi=int(self.visualization_config["preview_dpi"]),
+                bbox_inches="tight",
+            )
+        return ax
+
+    def plot_drilled_holes(
+        self,
+        drilled_positions: Sequence[tuple[float, float]] | None = None,
+        z: float | None = None,
+        ax: Any | None = None,
+        output_path: str | Path | None = None,
+        as_indices: bool = False,
+    ) -> Any:
+        """Plot a QC slice with drilled x-y locations highlighted as boreholes.
+
+        Positions may be given either in physical metres or as grid indices. The
+        default behaviour shows a few representative holes, which is useful for
+        generating a static preview in ``environment_visualisation/``.
+        """
+        import matplotlib.pyplot as plt
+        from matplotlib.colors import PowerNorm
+
+        if self.field is None:
+            raise ValueError("The field has not been generated yet. Call generate() first.")
+
+        if drilled_positions is None:
+            drilled_positions = [
+                (18.0, 22.0),
+                (32.0, 68.0),
+                (58.0, 42.0),
+                (72.0, 76.0),
+                (84.0, 30.0),
+            ]
+
+        z_to_plot = float(self.grid.z_coords[0] if z is None else z)
+        own_figure = ax is None
+        if own_figure:
+            _, ax = plt.subplots(figsize=tuple(self.visualization_config["slice_figsize"]))
+
+        iz = int(np.argmin(np.abs(self.grid.z_coords - z_to_plot)))
+        image = ax.imshow(
+            self.field[:, :, iz].T,
+            origin="lower",
+            aspect="equal",
+            cmap=self.visualization_config["cmap"],
+            norm=PowerNorm(
+                gamma=float(self.visualization_config["qc_gamma"]),
+                vmin=float(self.field.min()),
+                vmax=float(self.field.max()),
+            ),
+            extent=[self.grid.x_min, self.grid.x_max, self.grid.y_min, self.grid.y_max],
+        )
+
+        x_points: list[float] = []
+        y_points: list[float] = []
+        for position in drilled_positions:
+            if len(position) != 2:
+                raise ValueError("Each drilled position must contain exactly (x, y).")
+            x_world, y_world = float(position[0]), float(position[1])
+            if as_indices:
+                ix = int(round(x_world))
+                iy = int(round(y_world))
+                if not (0 <= ix < self.grid.nx and 0 <= iy < self.grid.ny):
+                    raise ValueError(f"Drilled index ({ix}, {iy}) is outside the model extent.")
+                x_world = float(self.grid.x_coords[ix])
+                y_world = float(self.grid.y_coords[iy])
+            else:
+                if not (self.grid.x_min <= x_world <= self.grid.x_max and self.grid.y_min <= y_world <= self.grid.y_max):
+                    raise ValueError(
+                        f"Drilled world position ({x_world}, {y_world}) is outside the model extent."
+                    )
+            x_points.append(x_world)
+            y_points.append(y_world)
+
+        ax.scatter(
+            x_points,
+            y_points,
+            s=180,
+            c="white",
+            edgecolors="black",
+            linewidths=1.8,
+            marker="o",
+            alpha=0.95,
+            zorder=3,
+        )
+        ax.scatter(
+            x_points,
+            y_points,
+            s=55,
+            c="black",
+            marker="x",
+            linewidths=1.8,
+            zorder=4,
+        )
+        ax.set(
+            title=f"Observed qc map at z={self.grid.z_coords[iz]:.2f} m with drilled holes",
+            xlabel="X (m)",
+            ylabel="Y (m)",
+        )
+        if own_figure:
+            ax.figure.colorbar(image, ax=ax, label=f"{self.property_name} ({self.unit})")
         if output_path is not None:
             destination = Path(output_path)
             destination.parent.mkdir(parents=True, exist_ok=True)

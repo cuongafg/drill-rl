@@ -7,6 +7,7 @@ import numpy as np
 from scipy.interpolate import interp1d
 
 from configuration import as_dict, load_config_section, project_path
+from observation_builder import build_observation_builder
 
 
 _FIELD_POOL_CACHE: dict[Path, np.ndarray] = {}
@@ -46,6 +47,13 @@ class DrillEnv(gym.Env):
         self.field = None
         self.position = 0
         self.drilled_columns = []
+        observation_cfg = self.config.get("observation", {})
+        mode = str(observation_cfg.get("mode", "legacy")).lower()
+        builder_kwargs = {
+            "context_radius": int(observation_cfg.get("context_radius", 2)),
+            "unknown_value": float(observation_cfg.get("unknown_value", 0.0)),
+        }
+        self.observation_builder = build_observation_builder(mode, **builder_kwargs)
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -78,17 +86,14 @@ class DrillEnv(gym.Env):
         info = {"rmse": rmse, "num_holes": num_holes}
         return self._get_obs(), reward, terminated, False, info
 
-    def _get_obs(self):
-        if self.field.ndim == 3:
-            slice_2d = self.field[self.position, :, :]
-            mean_ic = float(slice_2d.mean())
-            std_ic = float(slice_2d.std())
-            return np.array([self.position, mean_ic, std_ic], dtype=np.float32)
+    def build_spatial_observation(self):
+        """Return the current observation according to the configured builder."""
+        if self.field is None:
+            raise ValueError("Environment field is not initialized.")
+        return self.observation_builder.build(self.field, self.position, self.drilled_columns)
 
-        col = self.field[:, self.position]
-        mean_ic = float(col.mean())
-        std_ic = float(col.std())
-        return np.array([self.position, mean_ic, std_ic], dtype=np.float32)
+    def _get_obs(self):
+        return self.build_spatial_observation()
 
     def _compute_rmse(self):
         if len(self.drilled_columns) < 2:

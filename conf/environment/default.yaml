@@ -4,8 +4,11 @@ reward:
   borehole_weight: 0.1
   initial_rmse: 5.0
 observation:
+  mode: legacy
   low: [0.0, 0.0, 0.0]
   high: [100.0, 300.0, 100.0]
+  context_radius: 2
+  unknown_value: 0.0
 initial_position: 0
 train_pool: data/field_pool_train.npy
 train_pool_3d: data/field_pool_train_3d.npy

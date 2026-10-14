@@ -4,7 +4,7 @@ reward:
   borehole_weight: 0.1
   initial_rmse: 5.0
 observation:
-  mode: legacy
+  mode: legacy # legacy, cnn_patch, local_patch
   low: [0.0, 0.0, 0.0]
   high: [100.0, 300.0, 100.0]
   context_radius: 2

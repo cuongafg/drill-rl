@@ -81,9 +81,24 @@ class LocalPatchObservationBuilder(ObservationBuilder):
         return np.stack([patch, mask], axis=0).astype(np.float32)
 
 
+@dataclass
+class CnnPatchObservationBuilder(LocalPatchObservationBuilder):
+    """CNN-ready observation builder.
+
+    This is the same partial local patch concept as LocalPatchObservationBuilder,
+    but it is explicitly intended to be consumed by a convolutional policy. The
+    tensor shape is fixed to [2, x_window, y, z], where the first channel is the
+    observed qc values and the second is the known/unknown mask.
+    """
+
+    def build(self, field: np.ndarray, position: int, drilled_columns: Sequence[int]) -> np.ndarray:
+        return self.as_tensor(field, position, drilled_columns)
+
+
 BUILDER_TYPES = {
     "legacy": LegacyObservationBuilder,
     "local_patch": LocalPatchObservationBuilder,
+    "cnn_patch": CnnPatchObservationBuilder,
 }
 
 
@@ -95,7 +110,7 @@ def build_observation_builder(mode: str, **kwargs: Any) -> ObservationBuilder:
 
     if builder_type is LegacyObservationBuilder:
         return builder_type()
-    if builder_type is LocalPatchObservationBuilder:
+    if builder_type in {LocalPatchObservationBuilder, CnnPatchObservationBuilder}:
         return builder_type(
             context_radius=int(kwargs.get("context_radius", 2)),
             unknown_value=float(kwargs.get("unknown_value", 0.0)),

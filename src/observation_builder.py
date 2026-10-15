@@ -38,9 +38,10 @@ class LegacyObservationBuilder(ObservationBuilder):
 class LocalPatchObservationBuilder(ObservationBuilder):
     """Build a partially observed local patch for CNN-based policies.
 
-    The patch only contains values from already drilled locations. Unknown cells
-    are masked with the configured `unknown_value` so the policy never receives the
-    hidden full geology field as a direct input.
+    The patch only contains values from already drilled x,y coordinates. Unknown
+    cells remain masked so the policy never receives the hidden full geology field
+    as a direct input. The current implementation treats each drilled location as a
+    specific point in the x-y plane, and reveals the full vertical column beneath it.
     """
 
     context_radius: int = 2
@@ -50,21 +51,46 @@ class LocalPatchObservationBuilder(ObservationBuilder):
         if self.context_radius < 0:
             raise ValueError("context_radius must be non-negative.")
 
-    def build(self, field: np.ndarray, position: int, drilled_columns: Sequence[int]) -> dict[str, Any]:
+    def _resolve_drilled_points(
+        self,
+        field: np.ndarray,
+        position: int,
+        drilled_columns: Sequence[int | tuple[int, int]],
+    ) -> list[tuple[int, int]]:
+        points: list[tuple[int, int]] = []
+        for drilled in drilled_columns:
+            if isinstance(drilled, tuple):
+                x_idx, y_idx = int(drilled[0]), int(drilled[1])
+            else:
+                x_idx = int(drilled)
+                y_idx = field.shape[1] // 2
+            points.append((x_idx, y_idx))
+        if not points:
+            points.append((int(position), field.shape[1] // 2))
+        return points
+
+    def build(self, field: np.ndarray, position: int, drilled_columns: Sequence[int | tuple[int, int]]) -> dict[str, Any]:
         if field.ndim != 3:
             raise ValueError("LocalPatchObservationBuilder expects a 3D field array.")
 
-        x_start = max(0, position - self.context_radius)
-        x_stop = min(field.shape[0], position + self.context_radius + 1)
-        patch = np.full((x_stop - x_start, *field.shape[1:]), self.unknown_value, dtype=np.float32)
+        drilled_points = self._resolve_drilled_points(field, position, drilled_columns)
+        x_center = int(position)
+        y_center = int(np.median([y for _, y in drilled_points])) if drilled_points else field.shape[1] // 2
+        x_start = max(0, x_center - self.context_radius)
+        x_stop = min(field.shape[0], x_center + self.context_radius + 1)
+        y_start = max(0, y_center - self.context_radius)
+        y_stop = min(field.shape[1], y_center + self.context_radius + 1)
+
+        patch = np.full((x_stop - x_start, y_stop - y_start, field.shape[2]), self.unknown_value, dtype=np.float32)
         mask = np.zeros_like(patch, dtype=np.float32)
 
-        for drilled_x in drilled_columns:
-            if not (x_start <= drilled_x < x_stop):
+        for drilled_x, drilled_y in drilled_points:
+            if not (x_start <= drilled_x < x_stop and y_start <= drilled_y < y_stop):
                 continue
-            relative_x = drilled_x - x_start
-            patch[relative_x, :, :] = field[drilled_x, :, :]
-            mask[relative_x, :, :] = 1.0
+            local_x = drilled_x - x_start
+            local_y = drilled_y - y_start
+            patch[local_x, local_y, :] = field[drilled_x, drilled_y, :]
+            mask[local_x, local_y, :] = 1.0
 
         return {
             "patch": patch,
@@ -74,7 +100,7 @@ class LocalPatchObservationBuilder(ObservationBuilder):
             "shape": patch.shape,
         }
 
-    def as_tensor(self, field: np.ndarray, position: int, drilled_columns: Sequence[int]) -> np.ndarray:
+    def as_tensor(self, field: np.ndarray, position: int, drilled_columns: Sequence[int | tuple[int, int]]) -> np.ndarray:
         data = self.build(field, position, drilled_columns)
         patch = data["patch"]
         mask = data["mask"]
@@ -87,36 +113,44 @@ class CnnPatchObservationBuilder(LocalPatchObservationBuilder):
 
     This is the same partial local patch concept as LocalPatchObservationBuilder,
     but it is explicitly intended to be consumed by a convolutional policy. The
-    tensor shape is fixed to [2, x_window, y, z], where the first channel is the
-    observed qc values and the second is the known/unknown mask.
+    tensor shape is fixed to [2, x_window, y_window, z], where the first channel is
+    the observed qc values and the second is the known/unknown mask.
     """
 
-    def build(self, field: np.ndarray, position: int, drilled_columns: Sequence[int]) -> np.ndarray:
+    def build(self, field: np.ndarray, position: int, drilled_columns: Sequence[int | tuple[int, int]]) -> np.ndarray:
         return self.as_tensor(field, position, drilled_columns)
 
 
 @dataclass
 class FullObservedMapObservationBuilder(ObservationBuilder):
-    """Build a full observed map using all drilled holes collected so far.
+    """Build the cumulative observed map of drilled x,y measurements.
 
-    This keeps the full field hidden for realism, while exposing to the policy a
-    cumulative knowledge map of the measurements that have been collected so far.
-    The resulting tensor is shaped [2, nx, ny, nz], where the first channel stores
-    measured qc values and the second stores a 0/1 mask for known vs unknown cells.
+    Each drilled location contributes only the ground truth values below that
+    exact (x, y) coordinate. The map keeps the hidden full field private while
+    revealing all previously observed vertical columns at the chosen x,y points.
     """
 
     unknown_value: float = 0.0
 
-    def build(self, field: np.ndarray, position: int, drilled_columns: Sequence[int]) -> np.ndarray:
+    def build(self, field: np.ndarray, position: int, drilled_columns: Sequence[int | tuple[int, int]]) -> np.ndarray:
         if field.ndim != 3:
             raise ValueError("FullObservedMapObservationBuilder expects a 3D field array.")
 
         observed = np.full(field.shape, self.unknown_value, dtype=np.float32)
         mask = np.zeros(field.shape, dtype=np.float32)
 
-        for drilled_x in drilled_columns:
-            observed[drilled_x, :, :] = field[drilled_x, :, :]
-            mask[drilled_x, :, :] = 1.0
+        points: list[tuple[int, int]] = []
+        for drilled in drilled_columns:
+            if isinstance(drilled, tuple):
+                x_idx, y_idx = int(drilled[0]), int(drilled[1])
+            else:
+                x_idx = int(drilled)
+                y_idx = field.shape[1] // 2
+            points.append((x_idx, y_idx))
+
+        for x_idx, y_idx in points:
+            observed[x_idx, y_idx, :] = field[x_idx, y_idx, :]
+            mask[x_idx, y_idx, :] = 1.0
 
         return np.stack([observed, mask], axis=0).astype(np.float32)
 

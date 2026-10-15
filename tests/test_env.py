@@ -27,12 +27,12 @@ def test_local_patch_builder_uses_only_drilled_data():
    field[8, :, :] = 9.0
 
    builder = LocalPatchObservationBuilder(context_radius=2)
-   observation = builder.build(field, position=5, drilled_columns=[3, 5, 7])
+   observation = builder.build(field, position=5, drilled_columns=[(3, 2), (5, 3), (7, 4)])
 
-   assert observation["patch"].shape == (5, 5, 5)
+   assert observation["patch"].shape == (5, 4, 5)
    assert np.all((observation["mask"] == 0.0) | (observation["mask"] == 1.0))
    assert np.any(observation["mask"][0, :, :] == 1.0)
    assert np.any(observation["mask"][2, :, :] == 1.0)
-   assert observation["patch"][2, :, :].shape == (5, 5)
-   assert np.allclose(observation["patch"][2, :, :], field[5, :, :])
-   assert np.allclose(observation["patch"][0, :, :], field[3, :, :])
+   assert observation["patch"][0, 1, :].shape == (5,)
+   assert np.allclose(observation["patch"][2, 2, :], field[5, 3, :])
+   assert np.allclose(observation["patch"][0, 1, :], field[3, 2, :])

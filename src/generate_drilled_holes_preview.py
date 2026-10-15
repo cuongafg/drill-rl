@@ -5,6 +5,7 @@ from omegaconf import DictConfig
 
 from configuration import as_dict, project_path
 from property_field import PropertyField3D
+from property_field_visualizer import PropertyFieldVisualizer
 
 
 @hydra.main(version_base=None, config_path="../conf", config_name="config")
@@ -13,7 +14,6 @@ def main(cfg: DictConfig) -> None:
         **as_dict(cfg.grid),
         seed=int(cfg.seed),
         geology_config=as_dict(cfg.geology),
-        visualization_config=as_dict(cfg.visualization),
     )
     field.generate()
 
@@ -30,7 +30,7 @@ def main(cfg: DictConfig) -> None:
     ]
     output_path = project_path(str(drilled_cfg.output))
 
-    field.plot_drilled_holes(
+    PropertyFieldVisualizer(field, as_dict(cfg.visualization)).plot_drilled_holes(
         drilled_positions=positions,
         z=float(drilled_cfg.z),
         output_path=output_path,

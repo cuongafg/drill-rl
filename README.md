@@ -102,6 +102,22 @@ uv run python src/generate_drilled_holes_preview.py \
   environment/drilled_holes.output=environment_visualisation/my_holes.png
 ```
 
+### Make a 3D drilled-hole volume preview
+
+```bash
+uv run python src/generate_drilled_holes_3d_preview.py
+```
+
+This creates a 3D field preview with vertical drill markers through the full
+volume and saves it to `environment_visualisation/drilled_holes_3d_preview.png`
+by default. You can override the hole coordinates and output path with Hydra:
+
+```bash
+uv run python src/generate_drilled_holes_3d_preview.py \
+  visualization.drilled_holes.positions='[[10.0, 20.0], [32.0, 55.0], [70.0, 82.0], [90.0, 40.0]]' \
+  visualization.drilled_holes.output='environment_visualisation/my_3d_holes.png'
+```
+
 The same script can also be used to generate a deeper slice or a different set
 of illustrative borehole locations without editing the Python code.
 

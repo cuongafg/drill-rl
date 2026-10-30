@@ -5,6 +5,7 @@ defaults:
   - paths: default
   - field_pool: default
   - training: ppo
+  - model: mlp
   - evaluation: default
   - baseline: default
   - gempy: default

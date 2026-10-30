@@ -1,6 +1,6 @@
 count: 20
 seed_start: 0
-mode: 2d
+mode: 3d
 output: null
 output_2d: data/field_pool_train.npy
 output_3d: data/field_pool_train_3d.npy

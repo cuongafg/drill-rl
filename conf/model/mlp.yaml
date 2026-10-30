@@ -1,0 +1,5 @@
+name: mlp
+policy: MlpPolicy
+policy_kwargs:
+  net_arch: [64, 32]
+  activation_fn: relu

@@ -1,10 +1,30 @@
+import numpy as np
 from environment import DrillEnv
 from observation_builder import LocalPatchObservationBuilder
-import numpy as np
 
 
-def test_environment_step_returns_valid_transition():
-   env = DrillEnv()
+def _environment_config(pool_path):
+   return {
+       "actions": [2, 4],
+       "reward": {"rmse_weight": 1.0, "borehole_weight": 0.1, "initial_rmse": 5.0},
+       "pool": str(pool_path),
+       "initial_position": 0,
+       "observation": {
+           "mode": "full_observed_map",
+           "representation": "mlp",
+           "field_shape": [6, 4, 3],
+           "include_position": True,
+           "unknown_value": 0.0,
+           "value_low": 1.0,
+           "value_high": 5.0,
+       },
+   }
+
+
+def test_environment_step_returns_valid_transition(tmp_path):
+   pool_path = tmp_path / "pool.npy"
+   np.save(pool_path, np.ones((2, 6, 4, 3), dtype=np.int8))
+   env = DrillEnv(_environment_config(pool_path))
    observation, _ = env.reset(seed=42)
 
    next_observation, reward, terminated, truncated, info = env.step(
@@ -17,7 +37,20 @@ def test_environment_step_returns_valid_transition():
    assert isinstance(terminated, bool)
    assert isinstance(truncated, bool)
    assert info["num_holes"] >= 1
+   assert info["budget"] == 7
    assert np.isfinite(info["rmse"])
+
+
+def test_mlp_observation_contains_map_and_position(tmp_path):
+   pool_path = tmp_path / "pool.npy"
+   np.save(pool_path, np.full((1, 6, 4, 3), 5, dtype=np.int8))
+   env = DrillEnv(_environment_config(pool_path))
+   observation, _ = env.reset(seed=42)
+
+   assert observation.shape == (2 * 6 * 4 * 3 + 1,)
+   assert env.observation_space.contains(observation)
+   assert np.count_nonzero(observation[:-1]) == 6
+   assert observation[-1] == 0.0
 
 
 def test_local_patch_builder_uses_only_drilled_data():

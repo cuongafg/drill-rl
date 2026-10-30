@@ -33,14 +33,21 @@ def evaluate(cfg: DictConfig) -> None:
         observation, _ = env.reset()
         terminated = False
         truncated = False
+        steps = 0
         while not (terminated or truncated):
             action, _ = model.predict(
                 observation,
                 deterministic=bool(cfg.evaluation.deterministic),
             )
             observation, _, terminated, truncated, info = env.step(action)
+            steps += 1
         episode_results.append(
-            {"num_holes": int(info["num_holes"]), "rmse": float(info["rmse"])}
+            {
+                "num_holes": int(info["num_holes"]),
+                "rmse": float(info["rmse"]),
+                "steps": steps,
+                "budget": int(info["budget"]),
+            }
         )
 
     report_dir = save_experiment_report(

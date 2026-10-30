@@ -45,29 +45,55 @@ uv sync --dev
 # Generate the continuous qc ground-truth volume and its preview.
 uv run python src/generate_environment.py
 
-# Generate the default 2D GemPy training pool.
-uv run python src/generate_field_pool.py
+# Generate the default 3D GemPy training pool.
+uv run python src/generate_field_pool.py field_pool.mode=3d
 
 # Run the tests.
 uv run pytest
 ```
 
-The RL environments need generated field-pool files before training, evaluation,
-or baseline runs. The default training pool is `data/field_pool_train.npy`; the
-default evaluation pool is `data/field_pool_eval.npy`. To generate the
-evaluation pool separately, for example:
+The RL environments need generated 3D field-pool files before training or
+evaluation. The default training pool is `data/field_pool_train_3d.npy`. To
+generate a separate evaluation pool:
 
 ```bash
 uv run python src/generate_field_pool.py \
-  field_pool.output=data/field_pool_eval.npy \
+  field_pool.mode=3d \
+  field_pool.output=data/field_pool_eval_3d.npy \
   field_pool.seed_start=100
 ```
 
-Pool generation defaults to the legacy 2D mode. To generate a 3D training pool:
+The environment uses the 3D full observed map representation and flattens it
+for the configured MLP policy. The unflattened map remains the canonical
+observation representation so a future 3D CNN can reuse the same environment
+contract.
+
+The shared MLP architecture is configured in
+`conf/model/mlp.yaml` and is used by PPO, A2C, and DQN. The default experiment
+uses a two-layer `[64, 32]` network with ReLU activations. The environment
+configuration sets `max_holes: 7`, so learned policies and baselines stop under
+the same maximum CPT sounding budget.
+
+Train the algorithms with:
 
 ```bash
-uv run python src/generate_field_pool.py field_pool.mode=3d
+uv run python src/train_ppo.py
+uv run python src/train_a2c.py
+uv run python src/train_dqn.py
 ```
+
+For a smoke test before a full run, override the timesteps and model directory
+through Hydra:
+
+```bash
+uv run python src/train_ppo.py \
+  training.total_timesteps=10000 \
+  training.model_name=ppo_mlp_smoke
+```
+
+The saved run includes the resolved Hydra configuration and metadata, allowing
+the resulting RMSE and number of soundings to be compared with the random and
+regular-grid baseline reports.
 
 The corresponding 3D pool is written to `data/field_pool_train_3d.npy` by
 default. Select the pool used by the environments with the settings in

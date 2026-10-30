@@ -18,13 +18,14 @@ def run_baseline(cfg: DictConfig) -> None:
         observation, _ = env.reset(seed=int(rng.integers(0, 2**32 - 1)))
         terminated = False
         sequence_index = 0
+        steps = 0
         while not terminated:
             if settings.strategy == "random":
-                if settings.target_holes is not None and len(env.drilled_columns) >= int(settings.target_holes):
+                if len(env.drilled_columns) >= env.max_holes:
                     break
                 action = int(rng.integers(0, int(settings.random_action_max) + 1))
             elif settings.strategy == "fixed":
-                if settings.target_holes is not None and len(env.drilled_columns) >= int(settings.target_holes):
+                if len(env.drilled_columns) >= env.max_holes:
                     break
                 action = int(settings.fallback_action)
             else:
@@ -38,11 +39,14 @@ def run_baseline(cfg: DictConfig) -> None:
 
             observation, _, terminated, truncated, _ = env.step(action)
             terminated = bool(terminated or truncated)
+            steps += 1
 
         episode_results.append(
             {
                 "num_holes": len(env.drilled_columns),
                 "rmse": float(env._compute_rmse()),
+                "steps": steps,
+                "budget": env.max_holes,
             }
         )
 

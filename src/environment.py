@@ -26,6 +26,8 @@ def _load_pool(candidate_paths: list[Path]) -> np.ndarray:
 
 
 class DrillEnv(gym.Env):
+    metadata = {"render_modes": []}
+
     def __init__(self, config=None):
         super().__init__()
         self.config = load_config_section("environment") if config is None else as_dict(config)
@@ -34,26 +36,33 @@ class DrillEnv(gym.Env):
         self.borehole_weight = float(self.config["reward"]["borehole_weight"])
         self.initial_rmse = float(self.config["reward"]["initial_rmse"])
         self.initial_position = int(self.config["initial_position"])
-        self.pool_paths = [
-            project_path(self.config["train_pool_3d"]),
-            project_path(self.config["train_pool"]),
-        ]
+        self.max_holes = int(self.config.get("max_holes", 7))
+        if self.max_holes < 1:
+            raise ValueError("max_holes must be at least 1.")
+        self.pool_paths = [project_path(self.config["pool"])]
         self.action_space = spaces.Discrete(len(self.actions))
-        self.observation_space = spaces.Box(
-            low=np.asarray(self.config["observation"]["low"], dtype=np.float32),
-            high=np.asarray(self.config["observation"]["high"], dtype=np.float32),
-            dtype=np.float32,
+        observation_cfg = self.config["observation"]
+        self.field_shape = tuple(int(value) for value in observation_cfg["field_shape"])
+        if len(self.field_shape) != 3:
+            raise ValueError("The 3D environment requires observation.field_shape=[nx, ny, nz].")
+        self.observation_space = self._build_observation_builder(observation_cfg).space(
+            self.field_shape
         )
         self.field = None
         self.position = 0
         self.drilled_columns = []
-        observation_cfg = self.config.get("observation", {})
-        mode = str(observation_cfg.get("mode", "legacy")).lower()
-        builder_kwargs = {
-            "context_radius": int(observation_cfg.get("context_radius", 2)),
-            "unknown_value": float(observation_cfg.get("unknown_value", 0.0)),
-        }
-        self.observation_builder = build_observation_builder(mode, **builder_kwargs)
+        self.observation_builder = self._build_observation_builder(observation_cfg)
+
+    @staticmethod
+    def _build_observation_builder(observation_cfg):
+        return build_observation_builder(
+            str(observation_cfg["mode"]),
+            representation=str(observation_cfg.get("representation", "map")),
+            include_position=bool(observation_cfg.get("include_position", True)),
+            unknown_value=float(observation_cfg.get("unknown_value", 0.0)),
+            value_low=float(observation_cfg.get("value_low", 1.0)),
+            value_high=float(observation_cfg.get("value_high", 5.0)),
+        )
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -61,6 +70,11 @@ class DrillEnv(gym.Env):
 
         idx = self.np_random.integers(0, len(pool))
         self.field = np.asarray(pool[idx])
+        if self.field.shape != self.field_shape:
+            raise ValueError(
+                f"Configured field shape {self.field_shape} does not match loaded "
+                f"field shape {self.field.shape}."
+            )
         self.position = self.initial_position
         self.drilled_columns = [self.initial_position]
         return self._get_obs(), {}
@@ -70,21 +84,18 @@ class DrillEnv(gym.Env):
         max_position = self.field.shape[0] - 1 if self.field.ndim == 3 else self.field.shape[1] - 1
         new_position = self.position + distance
 
-        if new_position >= max_position:
-            self.position = max_position
-            terminated = True
-        else:
-            self.position = new_position
-            terminated = False
-            if self.position not in self.drilled_columns:
-                self.drilled_columns.append(self.position)
+        self.position = min(new_position, max_position)
+        if self.position not in self.drilled_columns:
+            self.drilled_columns.append(self.position)
+        terminated = self.position >= max_position
+        truncated = len(self.drilled_columns) >= self.max_holes and not terminated
 
         rmse = self._compute_rmse()
         num_holes = len(self.drilled_columns)
         reward = -(self.rmse_weight * rmse + self.borehole_weight * num_holes)
 
-        info = {"rmse": rmse, "num_holes": num_holes}
-        return self._get_obs(), reward, terminated, False, info
+        info = {"rmse": rmse, "num_holes": num_holes, "budget": self.max_holes}
+        return self._get_obs(), reward, terminated, truncated, info
 
     def build_spatial_observation(self):
         """Return the current observation according to the configured builder."""

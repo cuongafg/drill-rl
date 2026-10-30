@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Sequence
 
+from gymnasium import spaces
 import numpy as np
 
 
@@ -10,6 +11,9 @@ class ObservationBuilder:
     """Base class for turning drill state into agent observations."""
 
     def build(self, field: np.ndarray, position: int, drilled_columns: Sequence[int]) -> np.ndarray | dict[str, Any]:
+        raise NotImplementedError
+
+    def space(self, field_shape: tuple[int, ...]) -> spaces.Space:
         raise NotImplementedError
 
 
@@ -131,6 +135,21 @@ class FullObservedMapObservationBuilder(ObservationBuilder):
     """
 
     unknown_value: float = 0.0
+    value_low: float = 1.0
+    value_high: float = 5.0
+
+    def __post_init__(self) -> None:
+        if self.value_high <= self.value_low:
+            raise ValueError("value_high must be greater than value_low.")
+
+    def space(self, field_shape: tuple[int, ...]) -> spaces.Box:
+        if len(field_shape) != 3:
+            raise ValueError("FullObservedMapObservationBuilder expects a 3D field shape.")
+        return spaces.Box(
+            low=np.full((2, *field_shape), self.unknown_value, dtype=np.float32),
+            high=np.ones((2, *field_shape), dtype=np.float32),
+            dtype=np.float32,
+        )
 
     def build(self, field: np.ndarray, position: int, drilled_columns: Sequence[int | tuple[int, int]]) -> np.ndarray:
         if field.ndim != 3:
@@ -149,10 +168,47 @@ class FullObservedMapObservationBuilder(ObservationBuilder):
             points.append((x_idx, y_idx))
 
         for x_idx, y_idx in points:
-            observed[x_idx, y_idx, :] = field[x_idx, y_idx, :]
+            values = (
+                np.asarray(field[x_idx, y_idx, :], dtype=np.float32) - self.value_low
+            ) / (self.value_high - self.value_low)
+            observed[x_idx, y_idx, :] = np.clip(values, 0.0, 1.0)
             mask[x_idx, y_idx, :] = 1.0
 
         return np.stack([observed, mask], axis=0).astype(np.float32)
+
+
+@dataclass
+class MlpObservationBuilder(ObservationBuilder):
+    """Flatten a canonical 3D map and append normalized position for an MLP."""
+
+    base_builder: FullObservedMapObservationBuilder
+    include_position: bool = True
+
+    def space(self, field_shape: tuple[int, ...]) -> spaces.Box:
+        if len(field_shape) != 3:
+            raise ValueError("MlpObservationBuilder expects a 3D field shape.")
+        size = 2 * int(np.prod(field_shape))
+        if self.include_position:
+            size += 1
+        return spaces.Box(
+            low=np.zeros(size, dtype=np.float32),
+            high=np.ones(size, dtype=np.float32),
+            dtype=np.float32,
+        )
+
+    def build(
+        self,
+        field: np.ndarray,
+        position: int,
+        drilled_columns: Sequence[int | tuple[int, int]],
+    ) -> np.ndarray:
+        volume = self.base_builder.build(field, position, drilled_columns)
+        values = volume.reshape(-1)
+        if not self.include_position:
+            return values.astype(np.float32)
+        denominator = max(field.shape[0] - 1, 1)
+        normalized_position = np.asarray([position / denominator], dtype=np.float32)
+        return np.concatenate((values, normalized_position)).astype(np.float32)
 
 
 BUILDER_TYPES = {
@@ -177,8 +233,16 @@ def build_observation_builder(mode: str, **kwargs: Any) -> ObservationBuilder:
             unknown_value=float(kwargs.get("unknown_value", 0.0)),
         )
     if builder_type is FullObservedMapObservationBuilder:
-        return builder_type(
+        base_builder = builder_type(
             unknown_value=float(kwargs.get("unknown_value", 0.0)),
+            value_low=float(kwargs.get("value_low", 1.0)),
+            value_high=float(kwargs.get("value_high", 5.0)),
         )
+        if str(kwargs.get("representation", "map")).lower() == "mlp":
+            return MlpObservationBuilder(
+                base_builder=base_builder,
+                include_position=bool(kwargs.get("include_position", True)),
+            )
+        return base_builder
 
     return builder_type(**kwargs)

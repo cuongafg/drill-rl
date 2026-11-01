@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from environment import DrillEnv
 from observation_builder import LocalPatchObservationBuilder
 
@@ -51,6 +52,31 @@ def test_mlp_observation_contains_map_and_position(tmp_path):
    assert env.observation_space.contains(observation)
    assert np.count_nonzero(observation[:-1]) == 6
    assert observation[-1] == 0.0
+
+
+def test_reset_can_select_a_specific_pool_field(tmp_path):
+   pool_path = tmp_path / "pool.npy"
+   pool = np.stack(
+       [
+           np.zeros((6, 4, 3), dtype=np.int8),
+           np.ones((6, 4, 3), dtype=np.int8),
+       ]
+   )
+   np.save(pool_path, pool)
+   env = DrillEnv(_environment_config(pool_path))
+
+   observation, _ = env.reset(options={"field_index": 1})
+
+   assert np.array_equal(env.field, pool[1])
+
+
+def test_reset_rejects_invalid_pool_field_index(tmp_path):
+   pool_path = tmp_path / "pool.npy"
+   np.save(pool_path, np.zeros((2, 6, 4, 3), dtype=np.int8))
+   env = DrillEnv(_environment_config(pool_path))
+
+   with pytest.raises(ValueError, match="field_index"):
+       env.reset(options={"field_index": 2})
 
 
 def test_local_patch_builder_uses_only_drilled_data():

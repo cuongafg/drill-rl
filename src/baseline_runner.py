@@ -3,19 +3,31 @@ from __future__ import annotations
 import numpy as np
 from omegaconf import DictConfig
 
-from environment import DrillEnv
+from environment_eval import DrillEnv
 from experiment_reports import save_experiment_report
 
 
 def run_baseline(cfg: DictConfig) -> None:
     """Run a configured random or fixed-spacing baseline."""
     settings = cfg.baseline
+    mode = str(settings.get("mode", "random")).lower()
+    if mode not in {"random", "one_to_one"}:
+        raise ValueError(
+            f"Unsupported baseline evaluation mode: {mode}. "
+            "Choose 'random' or 'one_to_one'."
+        )
     env = DrillEnv(cfg.environment)
     episode_results: list[dict[str, int | float]] = []
     rng = np.random.default_rng(int(cfg.seed))
 
-    for _ in range(int(settings.episodes)):
-        observation, _ = env.reset(seed=int(rng.integers(0, 2**32 - 1)))
+    for episode_index in range(int(settings.episodes)):
+        reset_options = (
+            {"field_index": episode_index} if mode == "one_to_one" else None
+        )
+        observation, _ = env.reset(
+            seed=int(rng.integers(0, 2**32 - 1)),
+            options=reset_options,
+        )
         terminated = False
         sequence_index = 0
         steps = 0

@@ -68,7 +68,15 @@ class DrillEnv(gym.Env):
         super().reset(seed=seed)
         pool = _load_pool(self.pool_paths)
 
-        idx = self.np_random.integers(0, len(pool))
+        options = {} if options is None else options
+        if "field_index" in options:
+            idx = int(options["field_index"])
+            if not 0 <= idx < len(pool):
+                raise ValueError(
+                    f"field_index must be between 0 and {len(pool) - 1}, got {idx}."
+                )
+        else:
+            idx = self.np_random.integers(0, len(pool))
         self.field = np.asarray(pool[idx])
         if self.field.shape != self.field_shape:
             raise ValueError(

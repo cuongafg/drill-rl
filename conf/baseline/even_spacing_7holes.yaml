@@ -1,5 +1,6 @@
 name: even_spacing_7holes
 episodes: 100
+mode: random
 strategy: fixed
 target_holes: 7
 random_action_max: 4

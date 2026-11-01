@@ -91,6 +91,23 @@ uv run python src/train_ppo.py \
   training.model_name=ppo_mlp_smoke
 ```
 
+PPO and baseline evaluations support both random field sampling and one-to-one
+evaluation of every field in the evaluation pool. For a fair comparison, use
+the same episode count and mode for each:
+
+```bash
+uv run python src/evaluate_ppo.py \
+  evaluation.episodes=50 \
+  evaluation.mode=one_to_one \
+  'evaluation.comparisons=[random,even_spacing]'
+```
+
+Supported comparisons are `random`, `even_spacing`, `random_7holes`, and
+`even_spacing_7holes`. In `one_to_one` mode, episode `i` evaluates
+evaluation-pool field `i`; the episode count must not exceed the number of
+fields in the pool. Comparisons use the same evaluation pool, episode count,
+and mode as PPO.
+
 The saved run includes the resolved Hydra configuration and metadata, allowing
 the resulting RMSE and number of soundings to be compared with the random and
 regular-grid baseline reports.

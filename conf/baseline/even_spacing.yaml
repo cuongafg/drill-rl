@@ -1,5 +1,6 @@
 name: even_spacing
 episodes: 100
+mode: random
 strategy: sequence
 target_holes: null
 random_action_max: 4

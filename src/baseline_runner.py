@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import numpy as np
 from omegaconf import DictConfig
 
@@ -17,7 +19,7 @@ def run_baseline(cfg: DictConfig) -> None:
             "Choose 'random' or 'one_to_one'."
         )
     env = DrillEnv(cfg.environment)
-    episode_results: list[dict[str, int | float]] = []
+    episode_results: list[dict[str, object]] = []
     rng = np.random.default_rng(int(cfg.seed))
 
     for episode_index in range(int(settings.episodes)):
@@ -74,6 +76,9 @@ def run_baseline(cfg: DictConfig) -> None:
                 "rmse": float(env._compute_rmse()),
                 "steps": steps,
                 "budget": env.max_holes,
+                "drilled_coordinates": json.dumps(
+                    [[int(x), int(y)] for x, y in env.drilled_columns]
+                ),
             }
         )
 

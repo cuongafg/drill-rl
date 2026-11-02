@@ -10,7 +10,7 @@ import numpy as np
 class ObservationBuilder:
     """Base class for turning drill state into agent observations."""
 
-    def build(self, field: np.ndarray, position: int, drilled_columns: Sequence[int]) -> np.ndarray | dict[str, Any]:
+    def build(self, field: np.ndarray, position, drilled_columns) -> np.ndarray | dict[str, Any]:
         raise NotImplementedError
 
     def space(self, field_shape: tuple[int, ...]) -> spaces.Space:
@@ -189,7 +189,7 @@ class MlpObservationBuilder(ObservationBuilder):
             raise ValueError("MlpObservationBuilder expects a 3D field shape.")
         size = 2 * int(np.prod(field_shape))
         if self.include_position:
-            size += 1
+            size += 2
         return spaces.Box(
             low=np.zeros(size, dtype=np.float32),
             high=np.ones(size, dtype=np.float32),
@@ -206,8 +206,14 @@ class MlpObservationBuilder(ObservationBuilder):
         values = volume.reshape(-1)
         if not self.include_position:
             return values.astype(np.float32)
-        denominator = max(field.shape[0] - 1, 1)
-        normalized_position = np.asarray([position / denominator], dtype=np.float32)
+        x, y = position if isinstance(position, tuple) else (int(position), field.shape[1] // 2)
+        normalized_position = np.asarray(
+            [
+                x / max(field.shape[0] - 1, 1),
+                y / max(field.shape[1] - 1, 1),
+            ],
+            dtype=np.float32,
+        )
         return np.concatenate((values, normalized_position)).astype(np.float32)
 
 

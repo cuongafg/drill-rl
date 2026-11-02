@@ -35,19 +35,35 @@ def run_baseline(cfg: DictConfig) -> None:
             if settings.strategy == "random":
                 if len(env.drilled_columns) >= env.max_holes:
                     break
-                action = int(rng.integers(0, int(settings.random_action_max) + 1))
+                action = int(rng.integers(0, len(env.available_coordinates)))
             elif settings.strategy == "fixed":
                 if len(env.drilled_columns) >= env.max_holes:
                     break
-                action = int(settings.fallback_action)
+                distance = [2, 4, 8, 12, 16][int(settings.fallback_action)]
+                x = min(
+                    env.field.shape[0] - 1,
+                    env.initial_position[0] + distance * (len(env.drilled_columns)),
+                )
+                action = env.available_coordinates.index((x, env.field.shape[1] // 2))
             else:
                 sequence = list(settings.action_sequence)
-                action = int(
+                action_index = int(
                     sequence[sequence_index]
                     if sequence_index < len(sequence)
                     else settings.fallback_action
                 )
                 sequence_index += 1
+                distance = [2, 4, 8, 12, 16][action_index]
+                x = min(
+                    env.field.shape[0] - 1,
+                    env.initial_position[0] + distance * sequence_index,
+                )
+                candidate = (x, env.field.shape[1] // 2)
+                action = (
+                    env.available_coordinates.index(candidate)
+                    if candidate in env.available_coordinates
+                    else 0
+                )
 
             observation, _, terminated, truncated, _ = env.step(action)
             terminated = bool(terminated or truncated)

@@ -6,7 +6,6 @@ def test_environment_reset_returns_valid_observation(tmp_path):
     pool_path = tmp_path / "pool.npy"
     np.save(pool_path, np.ones((1, 6, 4, 3), dtype=np.int8))
     env = DrillEnv({
-        "actions": [2],
         "reward": {"rmse_weight": 1.0, "borehole_weight": 0.1, "initial_rmse": 5.0},
         "pool": str(pool_path),
         "initial_position": 0,

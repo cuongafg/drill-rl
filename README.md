@@ -74,6 +74,12 @@ uses a two-layer `[64, 32]` network with ReLU activations. The environment
 configuration sets `max_holes: 7`, so learned policies and baselines stop under
 the same maximum CPT sounding budget.
 
+Each drilling action selects an index into the currently available integer
+`[x, y]` coordinates in the field. Coordinates may be selected in any order,
+including backwards movement. Once selected, a coordinate is removed from the
+available set and cannot be selected again. Changing the action space requires
+retraining existing models.
+
 Train the algorithms with:
 
 ```bash

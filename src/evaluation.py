@@ -97,8 +97,8 @@ def evaluate(cfg: DictConfig) -> None:
                 "budget": int(info["budget"]),
                 "drilled_coordinates": json.dumps(
                     [
-                        [int(x), int(env.field.shape[1] // 2)]
-                        for x in env.drilled_columns
+                        [int(x), int(y)]
+                        for x, y in env.drilled_columns
                     ]
                 ),
             }

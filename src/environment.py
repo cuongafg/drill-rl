@@ -4,7 +4,6 @@ from pathlib import Path
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
-from scipy.interpolate import interp1d
 
 from configuration import as_dict, load_config_section, project_path
 from observation_builder import build_observation_builder
@@ -31,26 +30,37 @@ class DrillEnv(gym.Env):
     def __init__(self, config=None):
         super().__init__()
         self.config = load_config_section("environment") if config is None else as_dict(config)
-        self.actions = [int(action) for action in self.config["actions"]]
         self.rmse_weight = float(self.config["reward"]["rmse_weight"])
         self.borehole_weight = float(self.config["reward"]["borehole_weight"])
         self.initial_rmse = float(self.config["reward"]["initial_rmse"])
-        self.initial_position = int(self.config["initial_position"])
         self.max_holes = int(self.config.get("max_holes", 7))
         if self.max_holes < 1:
             raise ValueError("max_holes must be at least 1.")
         self.pool_paths = [project_path(self.config["pool"])]
-        self.action_space = spaces.Discrete(len(self.actions))
         observation_cfg = self.config["observation"]
         self.field_shape = tuple(int(value) for value in observation_cfg["field_shape"])
         if len(self.field_shape) != 3:
             raise ValueError("The 3D environment requires observation.field_shape=[nx, ny, nz].")
+        self.action_space = spaces.Discrete(self.field_shape[0] * self.field_shape[1])
+        initial_position = self.config.get("initial_position", [0, self.field_shape[1] // 2])
+        if isinstance(initial_position, (list, tuple)):
+            if len(initial_position) != 2:
+                raise ValueError("initial_position must contain [x, y].")
+            self.initial_position = (int(initial_position[0]), int(initial_position[1]))
+        else:
+            self.initial_position = (int(initial_position), self.field_shape[1] // 2)
+        if not (
+            0 <= self.initial_position[0] < self.field_shape[0]
+            and 0 <= self.initial_position[1] < self.field_shape[1]
+        ):
+            raise ValueError(f"initial_position {self.initial_position} is outside the field.")
         self.observation_space = self._build_observation_builder(observation_cfg).space(
             self.field_shape
         )
         self.field = None
-        self.position = 0
+        self.position = self.initial_position
         self.drilled_columns = []
+        self.available_coordinates: list[tuple[int, int]] = []
         self.observation_builder = self._build_observation_builder(observation_cfg)
 
     @staticmethod
@@ -85,24 +95,40 @@ class DrillEnv(gym.Env):
             )
         self.position = self.initial_position
         self.drilled_columns = [self.initial_position]
+        self.available_coordinates = [
+            (x, y)
+            for x in range(self.field_shape[0])
+            for y in range(self.field_shape[1])
+            if (x, y) != self.initial_position
+        ]
         return self._get_obs(), {}
 
-    def step(self, action_idx):
-        distance = self.actions[int(action_idx)]
-        max_position = self.field.shape[0] - 1 if self.field.ndim == 3 else self.field.shape[1] - 1
-        new_position = self.position + distance
+    def step(self, action):
+        if not self.available_coordinates:
+            raise RuntimeError("No drilling coordinates remain available.")
+        action_index = int(action)
+        if not self.action_space.contains(action_index):
+            raise ValueError(f"Action index must be in [0, {self.action_space.n - 1}].")
+        coordinate = self.available_coordinates[action_index % len(self.available_coordinates)]
 
-        self.position = min(new_position, max_position)
-        if self.position not in self.drilled_columns:
-            self.drilled_columns.append(self.position)
-        terminated = self.position >= max_position
-        truncated = len(self.drilled_columns) >= self.max_holes and not terminated
+        self.position = coordinate
+        self.drilled_columns.append(coordinate)
+        self.available_coordinates.remove(coordinate)
+        terminated = False
+        truncated = len(self.drilled_columns) >= self.max_holes
 
         rmse = self._compute_rmse()
         num_holes = len(self.drilled_columns)
         reward = -(self.rmse_weight * rmse + self.borehole_weight * num_holes)
 
-        info = {"rmse": rmse, "num_holes": num_holes, "budget": self.max_holes}
+        info = {
+            "rmse": rmse,
+            "num_holes": num_holes,
+            "budget": self.max_holes,
+            "invalid_action": False,
+            "drilled_coordinate": coordinate,
+            "available_coordinates": len(self.available_coordinates),
+        }
         return self._get_obs(), reward, terminated, truncated, info
 
     def build_spatial_observation(self):
@@ -118,41 +144,17 @@ class DrillEnv(gym.Env):
         if len(self.drilled_columns) < 2:
             return self.initial_rmse
 
-        known_x = np.asarray(self.drilled_columns, dtype=np.int64)
-
-        if self.field.ndim == 3:
-            x_size = self.field.shape[0]
-            interpolated = np.zeros_like(self.field, dtype=np.float64)
-            for y in range(self.field.shape[1]):
-                for z in range(self.field.shape[2]):
-                    known_y = self.field[known_x, y, z]
-                    if known_y.size == 0:
-                        continue
-                    f = interp1d(
-                        known_x,
-                        known_y,
-                        kind="linear",
-                        bounds_error=False,
-                        fill_value=(known_y[0], known_y[-1]),
-                    )
-                    interpolated[:, y, z] = f(np.arange(x_size))
-            rmse = np.sqrt(np.mean((interpolated - self.field) ** 2))
-            return float(rmse)
-
-        field_rows = self.field.shape[0]
-        field_cols = self.field.shape[1]
-        interpolated = np.zeros_like(self.field, dtype=np.float64)
-
-        for row in range(field_rows):
-            known_y = self.field[row, known_x]
-            f = interp1d(
-                known_x,
-                known_y,
-                kind="linear",
-                bounds_error=False,
-                fill_value=(known_y[0], known_y[-1]),
-            )
-            interpolated[row, :] = f(np.arange(field_cols))
-
+        points = np.asarray(self.drilled_columns, dtype=np.float64)
+        grid_x, grid_y = np.meshgrid(
+            np.arange(self.field.shape[0]),
+            np.arange(self.field.shape[1]),
+            indexing="ij",
+        )
+        distances = (
+            (grid_x[..., None] - points[:, 0]) ** 2
+            + (grid_y[..., None] - points[:, 1]) ** 2
+        )
+        nearest = np.argmin(distances, axis=-1)
+        interpolated = self.field[points[:, 0].astype(int), points[:, 1].astype(int), :][nearest]
         rmse = np.sqrt(np.mean((interpolated - self.field) ** 2))
         return float(rmse)

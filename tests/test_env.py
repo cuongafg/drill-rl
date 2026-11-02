@@ -6,7 +6,6 @@ from observation_builder import LocalPatchObservationBuilder
 
 def _environment_config(pool_path):
    return {
-       "actions": [2, 4],
        "reward": {"rmse_weight": 1.0, "borehole_weight": 0.1, "initial_rmse": 5.0},
        "pool": str(pool_path),
        "initial_position": 0,
@@ -42,16 +41,41 @@ def test_environment_step_returns_valid_transition(tmp_path):
    assert np.isfinite(info["rmse"])
 
 
+def test_coordinate_actions_support_backward_moves_and_reject_duplicates(tmp_path):
+   pool_path = tmp_path / "pool.npy"
+   np.save(pool_path, np.ones((1, 6, 4, 3), dtype=np.int8))
+   env = DrillEnv(_environment_config(pool_path))
+   env.reset(seed=42)
+
+   first_action = env.available_coordinates.index((4, 1))
+   _, _, _, truncated, info = env.step(first_action)
+   assert not truncated
+   assert env.position == (4, 1)
+   assert env.drilled_columns[-1] == (4, 1)
+
+   second_action = env.available_coordinates.index((1, 2))
+   _, _, _, truncated, info = env.step(second_action)
+   assert not truncated
+   assert not info["invalid_action"]
+   assert env.position == (1, 2)
+
+   _, _, _, truncated, info = env.step(env.action_space.n - 1)
+   assert not truncated
+   assert not info["invalid_action"]
+   assert len(env.drilled_columns) == 4
+   assert (4, 1) not in env.available_coordinates
+
+
 def test_mlp_observation_contains_map_and_position(tmp_path):
    pool_path = tmp_path / "pool.npy"
    np.save(pool_path, np.full((1, 6, 4, 3), 5, dtype=np.int8))
    env = DrillEnv(_environment_config(pool_path))
    observation, _ = env.reset(seed=42)
 
-   assert observation.shape == (2 * 6 * 4 * 3 + 1,)
+   assert observation.shape == (2 * 6 * 4 * 3 + 2,)
    assert env.observation_space.contains(observation)
    assert np.count_nonzero(observation[:-1]) == 6
-   assert observation[-1] == 0.0
+   assert np.allclose(observation[-2:], [0.0, 2.0 / 3.0])
 
 
 def test_reset_can_select_a_specific_pool_field(tmp_path):

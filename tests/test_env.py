@@ -47,13 +47,13 @@ def test_coordinate_actions_support_backward_moves_and_reject_duplicates(tmp_pat
    env = DrillEnv(_environment_config(pool_path))
    env.reset(seed=42)
 
-   first_action = env.available_coordinates.index((4, 1))
+   first_action = env.coordinate_to_action((4, 1))
    _, _, _, truncated, info = env.step(first_action)
    assert not truncated
    assert env.position == (4, 1)
    assert env.drilled_columns[-1] == (4, 1)
 
-   second_action = env.available_coordinates.index((1, 2))
+   second_action = env.coordinate_to_action((1, 2))
    _, _, _, truncated, info = env.step(second_action)
    assert not truncated
    assert not info["invalid_action"]
@@ -66,16 +66,32 @@ def test_coordinate_actions_support_backward_moves_and_reject_duplicates(tmp_pat
    assert (4, 1) not in env.available_coordinates
 
 
+def test_action_mask_disables_initial_and_drilled_coordinates(tmp_path):
+   pool_path = tmp_path / "pool.npy"
+   np.save(pool_path, np.ones((1, 6, 4, 3), dtype=np.int8))
+   env = DrillEnv(_environment_config(pool_path))
+   env.reset(seed=42)
+
+   initial_action = env.coordinate_to_action(env.initial_position)
+   available_action = env.coordinate_to_action((4, 1))
+   assert not env.action_masks()[initial_action]
+   assert env.action_masks()[available_action]
+
+   env.step(available_action)
+   assert not env.action_masks()[available_action]
+
+
 def test_mlp_observation_contains_map_and_position(tmp_path):
    pool_path = tmp_path / "pool.npy"
    np.save(pool_path, np.full((1, 6, 4, 3), 5, dtype=np.int8))
    env = DrillEnv(_environment_config(pool_path))
    observation, _ = env.reset(seed=42)
 
-   assert observation.shape == (2 * 6 * 4 * 3 + 2,)
+   assert observation.shape == (2 * 6 * 4 * 3 + 2 + 6 * 4,)
    assert env.observation_space.contains(observation)
-   assert np.count_nonzero(observation[:-1]) == 6
-   assert np.allclose(observation[-2:], [0.0, 2.0 / 3.0])
+   assert np.count_nonzero(observation[: 2 * 6 * 4 * 3 - 1]) == 6
+   assert np.allclose(observation[2 * 6 * 4 * 3 : 2 * 6 * 4 * 3 + 2], [0.0, 2.0 / 3.0])
+   assert np.count_nonzero(observation[-6 * 4 :]) == 23
 
 
 def test_reset_can_select_a_specific_pool_field(tmp_path):

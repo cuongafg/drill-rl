@@ -74,11 +74,13 @@ uses a two-layer `[64, 32]` network with ReLU activations. The environment
 configuration sets `max_holes: 7`, so learned policies and baselines stop under
 the same maximum CPT sounding budget.
 
-Each drilling action selects an index into the currently available integer
-`[x, y]` coordinates in the field. Coordinates may be selected in any order,
-including backwards movement. Once selected, a coordinate is removed from the
-available set and cannot be selected again. Changing the action space requires
-retraining existing models.
+Each drilling action uses a stable fixed mapping to an integer `[x, y]`
+coordinate: `action = x * width + y`. Coordinates may be selected in any
+order, including backwards movement. Once selected, the coordinate is marked
+unavailable in the shared action mask and cannot be selected again. The mask is
+also appended to the MLP observation so every algorithm receives the same
+availability information. Changing the action space or observation shape
+requires retraining existing models.
 
 Train the algorithms with the shared `[64, 32]` MLP:
 
@@ -91,6 +93,12 @@ uv run python src/train_dqn.py
 A2C and DQN use the same coordinate-based environment and MLP architecture as
 PPO. Existing checkpoints from the former movement-action environment must be
 retrained after the action-space change.
+
+PPO uses `MaskablePPO` from `sb3-contrib`. A2C uses a custom actor-critic
+policy that masks categorical logits, while DQN uses a custom policy and
+algorithm that mask Q-values, epsilon-greedy actions, and replay targets.
+All three use the same fixed mapping and `env.action_masks()` semantics.
+Existing checkpoints must be retrained after this change.
 
 For a smoke test before a full run, override the timesteps and model directory
 through Hydra:
@@ -306,9 +314,9 @@ which uses the evaluation pool. Both use the same action, observation, and
 reward settings in `conf/environment/default.yaml`.
 
 - The environment samples a geological field from its configured pool.
-- An action selects a configured movement distance along the drilling line.
-- The observation contains position and summary statistics for the current
-  field slice/column.
+- An action selects one fixed `[x, y]` coordinate using `x * width + y`.
+- The observation contains the observed map, position, and shared availability
+  mask for drilled coordinates.
 - The environment interpolates between drilled positions and calculates RMSE
   against the complete field. It combines RMSE and borehole count into reward.
 - Episode `info` includes RMSE and the number of drilled holes.
@@ -328,7 +336,7 @@ overridden on the command line using `group.key=value`.
 | --- | --- |
 | `conf/grid/site.yaml` | Grid dimensions and world-coordinate bounds; the surface is z=0 and depth is negative. |
 | `conf/geology/realistic_qc.yaml` | Continuous qc value range, spatial correlations, lenses, surface, and bedrock characteristics. |
-| `conf/environment/default.yaml` | Discrete drilling distances, observations, reward weights, starting position, and training/evaluation pool paths. |
+| `conf/environment/default.yaml` | Coordinate action mapping, observations, reward weights, starting position, and training/evaluation pool paths. |
 | `conf/field_pool/default.yaml` | GemPy pool size, mode, seed range, retry count, and output files. |
 | `conf/gempy/default.yaml` | GemPy extent, formations, input point counts, and legacy 2D resolution. |
 | `conf/paths/default.yaml` | Central locations for generated data, model checkpoints, reports, and visualizations. |

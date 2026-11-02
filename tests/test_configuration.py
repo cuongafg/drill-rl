@@ -24,5 +24,5 @@ def test_environment_uses_hydra_action_and_observation_settings():
     env = DrillEnv()
 
     assert env.action_space.n == 101 * 101
-    assert env.observation_space.shape == (2 * 101 * 101 * 21 + 2,)
+    assert env.observation_space.shape == (2 * 101 * 101 * 21 + 2 + 101 * 101,)
     assert env.max_holes == 7

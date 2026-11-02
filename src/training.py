@@ -5,9 +5,11 @@ from typing import Any
 
 import torch.nn as nn
 from omegaconf import DictConfig, OmegaConf
-from stable_baselines3 import A2C, DQN, PPO
+from sb3_contrib import MaskablePPO
+from stable_baselines3 import A2C
 
 from environment import DrillEnv
+from masked_policies import MaskedActorCriticPolicy, MaskedDQN, MaskedDQNPolicy
 from model_artifacts import (
     create_model_run_id,
     model_checkpoint_filename,
@@ -15,7 +17,7 @@ from model_artifacts import (
 )
 
 
-AGENT_TYPES = {"ppo": PPO, "a2c": A2C, "dqn": DQN}
+AGENT_TYPES = {"ppo": MaskablePPO, "a2c": A2C, "dqn": MaskedDQN}
 
 
 def train(cfg: DictConfig) -> None:
@@ -26,8 +28,13 @@ def train(cfg: DictConfig) -> None:
 
     env = DrillEnv(cfg.environment)
     algorithm_type = AGENT_TYPES[algorithm]
+    policy = {
+        "ppo": str(cfg.training.policy),
+        "a2c": MaskedActorCriticPolicy,
+        "dqn": MaskedDQNPolicy,
+    }[algorithm]
     model = algorithm_type(
-        str(cfg.training.policy),
+        policy,
         env,
         verbose=int(cfg.training.verbose),
         policy_kwargs=_resolve_policy_kwargs(cfg.model),

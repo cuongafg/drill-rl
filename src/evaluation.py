@@ -3,15 +3,17 @@ from __future__ import annotations
 import json
 import numpy as np
 from omegaconf import DictConfig, OmegaConf
-from stable_baselines3 import A2C, DQN, PPO
+from sb3_contrib import MaskablePPO
+from stable_baselines3 import A2C
 
 from baseline_runner import run_baseline
 from environment_eval import DrillEnv
 from experiment_reports import save_experiment_report
 from model_artifacts import model_checkpoint_filename, model_run_directory
+from masked_policies import MaskedDQN
 
 
-AGENT_TYPES = {"ppo": PPO, "a2c": A2C, "dqn": DQN}
+AGENT_TYPES = {"ppo": MaskablePPO, "a2c": A2C, "dqn": MaskedDQN}
 COMPARISON_CONFIGS = {
     "random": {
         "name": "random",
@@ -83,10 +85,12 @@ def evaluate(cfg: DictConfig) -> None:
         truncated = False
         steps = 0
         while not (terminated or truncated):
-            action, _ = model.predict(
-                observation,
-                deterministic=bool(cfg.evaluation.deterministic),
-            )
+            predict_kwargs = {
+                "deterministic": bool(cfg.evaluation.deterministic)
+            }
+            if algorithm == "ppo":
+                predict_kwargs["action_masks"] = env.action_masks()
+            action, _ = model.predict(observation, **predict_kwargs)
             observation, _, terminated, truncated, info = env.step(action)
             steps += 1
         episode_results.append(

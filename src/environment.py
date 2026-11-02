@@ -54,8 +54,16 @@ class DrillEnv(gym.Env):
             and 0 <= self.initial_position[1] < self.field_shape[1]
         ):
             raise ValueError(f"initial_position {self.initial_position} is outside the field.")
-        self.observation_space = self._build_observation_builder(observation_cfg).space(
+        base_observation_space = self._build_observation_builder(observation_cfg).space(
             self.field_shape
+        )
+        if not isinstance(base_observation_space, spaces.Box) or len(base_observation_space.shape) != 1:
+            raise ValueError("Coordinate masking requires a flat Box observation.")
+        action_count = self.action_space.n
+        self.observation_space = spaces.Box(
+            low=np.concatenate((base_observation_space.low, np.zeros(action_count, dtype=np.float32))),
+            high=np.concatenate((base_observation_space.high, np.ones(action_count, dtype=np.float32))),
+            dtype=np.float32,
         )
         self.field = None
         self.position = self.initial_position
@@ -109,7 +117,19 @@ class DrillEnv(gym.Env):
         action_index = int(action)
         if not self.action_space.contains(action_index):
             raise ValueError(f"Action index must be in [0, {self.action_space.n - 1}].")
-        coordinate = self.available_coordinates[action_index % len(self.available_coordinates)]
+        coordinate = self.action_to_coordinate(action_index)
+
+        if coordinate not in self.available_coordinates:
+            rmse = self._compute_rmse()
+            info = {
+                "rmse": rmse,
+                "num_holes": len(self.drilled_columns),
+                "budget": self.max_holes,
+                "invalid_action": True,
+                "drilled_coordinate": coordinate,
+                "available_coordinates": len(self.available_coordinates),
+            }
+            return self._get_obs(), -(rmse + 1.0), False, True, info
 
         self.position = coordinate
         self.drilled_columns.append(coordinate)
@@ -131,6 +151,26 @@ class DrillEnv(gym.Env):
         }
         return self._get_obs(), reward, terminated, truncated, info
 
+    def action_to_coordinate(self, action: int) -> tuple[int, int]:
+        """Map a stable discrete action to its field coordinate."""
+        action_index = int(action)
+        width = self.field_shape[1]
+        return action_index // width, action_index % width
+
+    def coordinate_to_action(self, coordinate: tuple[int, int]) -> int:
+        """Map a field coordinate to its stable discrete action."""
+        x, y = (int(coordinate[0]), int(coordinate[1]))
+        if not (0 <= x < self.field_shape[0] and 0 <= y < self.field_shape[1]):
+            raise ValueError(f"Coordinate {(x, y)} is outside the field.")
+        return x * self.field_shape[1] + y
+
+    def action_masks(self) -> np.ndarray:
+        """Return the MaskablePPO mask for currently available coordinates."""
+        mask = np.ones(self.action_space.n, dtype=bool)
+        for coordinate in self.drilled_columns:
+            mask[self.coordinate_to_action(coordinate)] = False
+        return mask
+
     def build_spatial_observation(self):
         """Return the current observation according to the configured builder."""
         if self.field is None:
@@ -138,7 +178,10 @@ class DrillEnv(gym.Env):
         return self.observation_builder.build(self.field, self.position, self.drilled_columns)
 
     def _get_obs(self):
-        return self.build_spatial_observation()
+        observation = self.build_spatial_observation()
+        if not isinstance(observation, np.ndarray):
+            raise ValueError("Coordinate masking requires a flat array observation.")
+        return np.concatenate((observation, self.action_masks().astype(np.float32)))
 
     def _compute_rmse(self):
         if len(self.drilled_columns) < 2:

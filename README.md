@@ -80,13 +80,17 @@ including backwards movement. Once selected, a coordinate is removed from the
 available set and cannot be selected again. Changing the action space requires
 retraining existing models.
 
-Train the algorithms with:
+Train the algorithms with the shared `[64, 32]` MLP:
 
 ```bash
 uv run python src/train_ppo.py
 uv run python src/train_a2c.py
 uv run python src/train_dqn.py
 ```
+
+A2C and DQN use the same coordinate-based environment and MLP architecture as
+PPO. Existing checkpoints from the former movement-action environment must be
+retrained after the action-space change.
 
 For a smoke test before a full run, override the timesteps and model directory
 through Hydra:
@@ -97,9 +101,9 @@ uv run python src/train_ppo.py \
   training.model_name=ppo_mlp_smoke
 ```
 
-PPO and baseline evaluations support both random field sampling and one-to-one
-evaluation of every field in the evaluation pool. For a fair comparison, use
-the same episode count and mode for each:
+PPO, A2C, DQN, and baseline evaluations support both random field sampling and
+one-to-one evaluation of every field in the evaluation pool. For a fair
+comparison, use the same episode count and mode for each:
 
 ```bash
 uv run python src/evaluate_ppo.py \
@@ -113,6 +117,24 @@ Supported comparisons are `random`, `even_spacing`, `random_7holes`, and
 evaluation-pool field `i`; the episode count must not exceed the number of
 fields in the pool. Comparisons use the same evaluation pool, episode count,
 and mode as PPO.
+
+For A2C or DQN, use the corresponding wrapper and checkpoint:
+
+```bash
+uv run python src/evaluate_a2c.py \
+  evaluation.model_run_id=<a2c-run-id> \
+  evaluation.model_name=a2c_coordinate_200k \
+  evaluation.episodes=50 \
+  evaluation.mode=one_to_one \
+  'evaluation.comparisons=[random,even_spacing]'
+
+uv run python src/evaluate_dqn.py \
+  evaluation.model_run_id=<dqn-run-id> \
+  evaluation.model_name=dqn_coordinate_200k \
+  evaluation.episodes=50 \
+  evaluation.mode=one_to_one \
+  'evaluation.comparisons=[random,even_spacing]'
+```
 
 The saved run includes the resolved Hydra configuration and metadata, allowing
 the resulting RMSE and number of soundings to be compared with the random and

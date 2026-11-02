@@ -1,5 +1,7 @@
 episodes: 100
 deterministic: true
+mode: random
+comparisons: []
 algorithm: dqn
 model_run_id: dqn-baseline
 model_name: DQN_baseline

@@ -63,6 +63,17 @@ uv run python src/generate_field_pool.py \
   field_pool.seed_start=100
 ```
 
+For parallel field-pool jobs, isolate GemPy's intermediate CSV inputs per
+field and remove them automatically after use:
+
+```bash
+uv run python src/generate_field_pool.py \
+  field_pool.mode=3d \
+  field_pool.parallel=true
+```
+
+Without this override, generation keeps using the configured shared CSV files.
+
 The environment uses the 3D full observed map representation and flattens it
 for the configured MLP policy. The unflattened map remains the canonical
 observation representation so a future 3D CNN can reuse the same environment

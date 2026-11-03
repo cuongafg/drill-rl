@@ -3,6 +3,7 @@ from __future__ import annotations
 import hydra
 import numpy as np
 from omegaconf import DictConfig
+from tempfile import TemporaryDirectory
 
 from configuration import as_dict, project_path
 from soil_field import generate_soil_field
@@ -12,6 +13,8 @@ from soil_field import generate_soil_field
 def main(cfg: DictConfig) -> None:
     field_pool = cfg.field_pool
     fields = []
+    parallel = bool(field_pool.get("parallel", False))
+    paths_config = as_dict(cfg.paths)
 
     for index in range(int(field_pool.count)):
         seed = int(field_pool.seed_start) + index
@@ -19,16 +22,31 @@ def main(cfg: DictConfig) -> None:
             f"Generating field {index + 1}/{field_pool.count} "
             f"(seed={seed}, mode={field_pool.mode})"
         )
-        fields.append(
-            generate_soil_field(
+        if parallel:
+            with TemporaryDirectory(prefix=f"field_{seed}_") as temp_dir:
+                isolated_paths = {
+                    **paths_config,
+                    "orientations": f"{temp_dir}/orientations.csv",
+                    "surface_points": f"{temp_dir}/surface_points.csv",
+                }
+                field = generate_soil_field(
+                    seed=seed,
+                    mode=str(field_pool.mode),
+                    max_retries=int(field_pool.max_retries),
+                    grid_config=as_dict(cfg.grid),
+                    gempy_config=as_dict(cfg.gempy),
+                    paths_config=isolated_paths,
+                )
+        else:
+            field = generate_soil_field(
                 seed=seed,
                 mode=str(field_pool.mode),
                 max_retries=int(field_pool.max_retries),
                 grid_config=as_dict(cfg.grid),
                 gempy_config=as_dict(cfg.gempy),
-                paths_config=as_dict(cfg.paths),
+                paths_config=paths_config,
             )
-        )
+        fields.append(field)
 
     pool = np.stack(fields)
     configured_output = field_pool.output

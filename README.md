@@ -120,8 +120,7 @@ uv run python src/evaluate_ppo.py \
   'evaluation.comparisons=[random,even_spacing]'
 ```
 
-Supported comparisons are `random`, `even_spacing`, `random_7holes`, and
-`even_spacing_7holes`. In `one_to_one` mode, episode `i` evaluates
+Supported comparisons are `random` and `even_spacing`. In `one_to_one` mode, episode `i` evaluates
 evaluation-pool field `i`; the episode count must not exceed the number of
 fields in the pool. Comparisons use the same evaluation pool, episode count,
 and mode as PPO.
@@ -290,6 +289,19 @@ uv run python src/evaluate_ppo.py \
 
 `src/run_all_evaluations.py` runs the algorithms and baseline scenarios listed
 in `conf/orchestration/default.yaml`.
+
+To also generate a publication-ready comparison figure for all reports produced
+by the orchestration run, enable the optional Hydra parameter:
+
+```bash
+uv run python src/run_all_evaluations.py \
+  orchestration.generate_diagram=true
+```
+
+The output directory contains a prediction-error RMSE diagram with the value
+annotated above each bar. It includes `model_comparison.png` (300 DPI),
+`model_comparison.pdf` (vector format), and `summary.csv` under
+`reports/experiments/comparisons/`.
 
 ### Run a baseline
 

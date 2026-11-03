@@ -1,3 +1,4 @@
 training_algorithms: [ppo, a2c, dqn]
 evaluation_algorithms: [ppo, a2c, dqn]
-baseline_scenarios: [random, even_spacing, random_7holes, even_spacing_7holes]
+baseline_scenarios: [random, even_spacing]
+generate_diagram: false

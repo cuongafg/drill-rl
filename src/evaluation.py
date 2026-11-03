@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import numpy as np
 from omegaconf import DictConfig, OmegaConf
 from sb3_contrib import MaskablePPO
@@ -50,7 +51,7 @@ COMPARISON_CONFIGS = {
 }
 
 
-def evaluate(cfg: DictConfig) -> None:
+def evaluate(cfg: DictConfig) -> Path:
     """Evaluate the configured policy and report mean boreholes and RMSE."""
     algorithm = str(cfg.evaluation.algorithm).lower()
     if algorithm not in AGENT_TYPES:
@@ -137,3 +138,4 @@ def evaluate(cfg: DictConfig) -> None:
             }
         )
         run_baseline(comparison_cfg)
+    return report_dir

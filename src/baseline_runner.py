@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import numpy as np
 from omegaconf import DictConfig
@@ -9,7 +10,7 @@ from environment_eval import DrillEnv
 from experiment_reports import save_experiment_report
 
 
-def run_baseline(cfg: DictConfig) -> None:
+def run_baseline(cfg: DictConfig) -> Path:
     """Run a configured random or fixed-spacing baseline."""
     settings = cfg.baseline
     mode = str(settings.get("mode", "random")).lower()
@@ -89,3 +90,4 @@ def run_baseline(cfg: DictConfig) -> None:
     print(f"Mean holes: {np.mean([r['num_holes'] for r in episode_results]):.3f}")
     print(f"Mean RMSE: {np.mean([r['rmse'] for r in episode_results]):.3f}")
     print(f"Baseline report saved to {report_dir}")
+    return report_dir

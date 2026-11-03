@@ -3,5 +3,5 @@ deterministic: true
 mode: random
 comparisons: []
 algorithm: ppo
-model_run_id: ppo-drill-baseline-200k
-model_name: ppo_drill_baseline_200k
+model_run_id: 20261102T145221.380490Z-0706e06d
+model_name: ppo_mlp_mask_smoke

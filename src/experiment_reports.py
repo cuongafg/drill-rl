@@ -5,6 +5,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 from statistics import fmean, pstdev
+from typing import Any
 
 from omegaconf import DictConfig
 
@@ -15,7 +16,7 @@ def save_experiment_report(
     cfg: DictConfig,
     category: str,
     experiment: str,
-    episode_results: list[dict[str, int | float]],
+    episode_results: list[dict[str, Any]],
 ) -> Path:
     """Save episode metrics and a reproducible summary in a unique report folder."""
     if not episode_results:
@@ -34,13 +35,14 @@ def save_experiment_report(
     )
     report_dir.mkdir(parents=True, exist_ok=False)
 
-    summary = {
-        metric: {
-            "mean": fmean(float(result[metric]) for result in episode_results),
-            "std": pstdev(float(result[metric]) for result in episode_results),
-        }
-        for metric in metric_names
-    }
+    summary = {}
+    for metric in metric_names:
+        values = [result[metric] for result in episode_results]
+        if all(isinstance(value, (int, float)) and not isinstance(value, bool) for value in values):
+            summary[metric] = {
+                "mean": fmean(float(value) for value in values),
+                "std": pstdev(float(value) for value in values),
+            }
     report = {
         "category": category,
         "experiment": experiment,

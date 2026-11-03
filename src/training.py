@@ -3,10 +3,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import torch.nn as nn
 from omegaconf import DictConfig, OmegaConf
-from stable_baselines3 import A2C, DQN, PPO
+from sb3_contrib import MaskablePPO
+from stable_baselines3 import A2C
 
 from environment import DrillEnv
+from masked_policies import MaskedActorCriticPolicy, MaskedDQN, MaskedDQNPolicy
 from model_artifacts import (
     create_model_run_id,
     model_checkpoint_filename,
@@ -14,7 +17,7 @@ from model_artifacts import (
 )
 
 
-AGENT_TYPES = {"ppo": PPO, "a2c": A2C, "dqn": DQN}
+AGENT_TYPES = {"ppo": MaskablePPO, "a2c": A2C, "dqn": MaskedDQN}
 
 
 def train(cfg: DictConfig) -> None:
@@ -25,10 +28,16 @@ def train(cfg: DictConfig) -> None:
 
     env = DrillEnv(cfg.environment)
     algorithm_type = AGENT_TYPES[algorithm]
+    policy = {
+        "ppo": str(cfg.training.policy),
+        "a2c": MaskedActorCriticPolicy,
+        "dqn": MaskedDQNPolicy,
+    }[algorithm]
     model = algorithm_type(
-        str(cfg.training.policy),
+        policy,
         env,
         verbose=int(cfg.training.verbose),
+        policy_kwargs=_resolve_policy_kwargs(cfg.model),
         **_resolve_parameters(cfg.training.parameters),
     )
     model.learn(total_timesteps=int(cfg.training.total_timesteps))
@@ -62,3 +71,19 @@ def train(cfg: DictConfig) -> None:
 
 def _resolve_parameters(parameters: DictConfig) -> dict[str, Any]:
     return {key: value for key, value in parameters.items()}
+
+
+def _resolve_policy_kwargs(model_config: DictConfig) -> dict[str, Any]:
+    """Resolve the shared policy architecture for PPO, A2C, and DQN."""
+    policy_kwargs = dict(model_config.policy_kwargs)
+    activation_name = str(policy_kwargs.get("activation_fn", "tanh")).lower()
+    activations = {"relu": nn.ReLU, "tanh": nn.Tanh, "elu": nn.ELU}
+    try:
+        policy_kwargs["activation_fn"] = activations[activation_name]
+    except KeyError as error:
+        raise ValueError(
+            f"Unsupported MLP activation '{activation_name}'. "
+            f"Choose one of {sorted(activations)}."
+        ) from error
+    policy_kwargs["net_arch"] = [int(layer) for layer in policy_kwargs["net_arch"]]
+    return policy_kwargs

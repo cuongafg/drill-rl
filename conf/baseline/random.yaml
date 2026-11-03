@@ -1,5 +1,6 @@
 name: random
 episodes: 100
+mode: random
 strategy: random
 target_holes: null
 random_action_max: 4

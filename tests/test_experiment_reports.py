@@ -39,6 +39,19 @@ def test_saves_episode_metrics_and_summary_under_report_root(tmp_path):
     assert summary["config"]["evaluation"]["algorithm"] == "ppo"
 
 
+def test_excludes_non_numeric_episode_details_from_summary(tmp_path):
+    cfg = OmegaConf.create({"seed": 1, "paths": {"results_dir": str(tmp_path)}})
+    episode_results = [
+        {"num_holes": 2, "drilled_coordinates": "[[0, 50], [2, 50]]"},
+        {"num_holes": 3, "drilled_coordinates": "[[0, 50], [4, 50]]"},
+    ]
+
+    report_dir = save_experiment_report(cfg, "evaluations", "ppo", episode_results)
+
+    summary = json.loads((report_dir / "summary.json").read_text(encoding="utf-8"))
+    assert "drilled_coordinates" not in summary["metrics"]
+
+
 def test_each_run_gets_a_separate_report_directory(tmp_path):
     cfg = OmegaConf.create({"seed": 1, "paths": {"results_dir": str(tmp_path)}})
     episode_results = [{"num_holes": 2, "rmse": 0.5}]

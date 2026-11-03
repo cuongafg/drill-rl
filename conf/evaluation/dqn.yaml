@@ -1,5 +1,7 @@
 episodes: 100
 deterministic: true
+mode: random
+comparisons: []
 algorithm: dqn
-model_run_id: dqn-baseline
-model_name: DQN_baseline
+model_run_id: 20261102T150405.252387Z-ff15ba90
+model_name: dqn_mlp_mask_smoke

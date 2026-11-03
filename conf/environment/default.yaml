@@ -1,12 +1,16 @@
-actions: [2, 4, 8, 12, 16]
 reward:
   rmse_weight: 1.0
   borehole_weight: 0.1
   initial_rmse: 5.0
+pool: data/field_pool_train_3d.npy
 observation:
-  low: [0.0, 0.0, 0.0]
-  high: [100.0, 300.0, 100.0]
-initial_position: 0
-train_pool: data/field_pool_train.npy
-train_pool_3d: data/field_pool_train_3d.npy
-eval_pool: data/field_pool_eval.npy
+  mode: full_observed_map # Canonical 3D representation shared by MLP and future CNN encoders.
+  representation: mlp
+  field_shape: [101, 101, 21]
+  include_position: true
+  unknown_value: 0.0
+  value_low: 1.0
+  value_high: 5.0
+initial_position: [0, 50]
+max_holes: 7
+eval_pool: data/field_pool_eval_3d.npy

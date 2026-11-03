@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import numpy as np
 from omegaconf import OmegaConf
@@ -48,17 +48,11 @@ class PropertyField3D:
         lens_count: int | None = None,
         include_fault: bool | None = None,
         geology_config: dict[str, Any] | None = None,
-        visualization_config: dict[str, Any] | None = None,
     ) -> None:
         self.geology_config = (
             load_config_file("geology/realistic_qc.yaml")
             if geology_config is None
             else geology_config
-        )
-        self.visualization_config = (
-            load_config_file("visualization/default.yaml")
-            if visualization_config is None
-            else visualization_config
         )
         geology = self.geology_config
         grid_settings = load_config_file("grid/site.yaml")
@@ -437,9 +431,6 @@ class PropertyField3D:
             geology_config=np.asarray(
                 OmegaConf.to_yaml(OmegaConf.create(self.geology_config))
             ),
-            visualization_config=np.asarray(
-                OmegaConf.to_yaml(OmegaConf.create(self.visualization_config))
-            ),
         )
         return str(destination)
 
@@ -476,15 +467,6 @@ class PropertyField3D:
                 if "geology_config" in loaded.files
                 else None
             )
-            visualization_config = (
-                OmegaConf.to_container(
-                    OmegaConf.create(str(np.asarray(loaded["visualization_config"]).item())),
-                    resolve=True,
-                )
-                if "visualization_config" in loaded.files
-                else None
-            )
-
         obj = cls(
             nx=x_coords.size,
             ny=y_coords.size,
@@ -502,7 +484,6 @@ class PropertyField3D:
             lens_count=lens_count,
             include_fault=include_fault,
             geology_config=geology_config,
-            visualization_config=visualization_config,
         )
         if field.shape != (obj.grid.nx, obj.grid.ny, obj.grid.nz):
             raise ValueError("Saved field dimensions do not match the stored coordinate vectors.")
@@ -523,323 +504,6 @@ class PropertyField3D:
         return np.column_stack(
             (self.grid.z_coords[depth_order], self.field[ix, iy, depth_order])
         )
-
-    def plot_horizontal_slice(
-        self,
-        z: float,
-        ax: Any | None = None,
-        output_path: str | Path | None = None,
-    ) -> Any:
-        """Plot a qc map at the nearest requested elevation in metres."""
-        import matplotlib.pyplot as plt
-        from matplotlib.colors import PowerNorm
-
-        if self.field is None:
-            raise ValueError("The field has not been generated yet. Call generate() first.")
-        own_figure = ax is None
-        if own_figure:
-            _, ax = plt.subplots(figsize=tuple(self.visualization_config["slice_figsize"]))
-        iz = int(np.argmin(np.abs(self.grid.z_coords - z)))
-        image = ax.imshow(
-            self.field[:, :, iz].T,
-            origin="lower",
-            aspect="equal",
-            cmap=self.visualization_config["cmap"],
-            norm=PowerNorm(
-                gamma=float(self.visualization_config["qc_gamma"]),
-                vmin=float(self.field.min()),
-                vmax=float(self.field.max()),
-            ),
-            extent=[self.grid.x_min, self.grid.x_max, self.grid.y_min, self.grid.y_max],
-        )
-        ax.set(title=f"qc at z={self.grid.z_coords[iz]:.2f} m", xlabel="X (m)", ylabel="Y (m)")
-        if own_figure:
-            ax.figure.colorbar(image, ax=ax, label=f"{self.property_name} ({self.unit})")
-        if output_path is not None:
-            destination = Path(output_path)
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            ax.figure.savefig(
-                destination,
-                dpi=int(self.visualization_config["preview_dpi"]),
-                bbox_inches="tight",
-            )
-        return ax
-
-    def plot_vertical_section(
-        self,
-        plane: str = "xz",
-        coordinate: float | None = None,
-        ax: Any | None = None,
-        output_path: str | Path | None = None,
-    ) -> Any:
-        """Plot an X-Z or Y-Z section at the nearest horizontal coordinate."""
-        import matplotlib.pyplot as plt
-        from matplotlib.colors import PowerNorm
-
-        if self.field is None:
-            raise ValueError("The field has not been generated yet. Call generate() first.")
-        plane = plane.lower()
-        if plane not in {"xz", "yz"}:
-            raise ValueError("plane must be 'xz' or 'yz'.")
-        own_figure = ax is None
-        if own_figure:
-            _, ax = plt.subplots(figsize=tuple(self.visualization_config["section_figsize"]))
-        if plane == "xz":
-            coordinate = float(self.grid.y_coords[self.grid.ny // 2] if coordinate is None else coordinate)
-            iy = int(np.argmin(np.abs(self.grid.y_coords - coordinate)))
-            section = self.field[:, iy, :].T
-            horizontal_coords = self.grid.x_coords
-            horizontal_label = "X (m)"
-            actual_coordinate = self.grid.y_coords[iy]
-        else:
-            coordinate = float(self.grid.x_coords[self.grid.nx // 2] if coordinate is None else coordinate)
-            ix = int(np.argmin(np.abs(self.grid.x_coords - coordinate)))
-            section = self.field[ix, :, :].T
-            horizontal_coords = self.grid.y_coords
-            horizontal_label = "Y (m)"
-            actual_coordinate = self.grid.x_coords[ix]
-
-        z_bottom = float(np.min(self.grid.z_coords))
-        z_surface = float(np.max(self.grid.z_coords))
-        image = ax.imshow(
-            section,
-            origin="upper",
-            aspect="auto",
-            cmap=self.visualization_config["cmap"],
-            norm=PowerNorm(
-                gamma=float(self.visualization_config["qc_gamma"]),
-                vmin=float(self.field.min()),
-                vmax=float(self.field.max()),
-            ),
-            extent=[
-                float(horizontal_coords[0]),
-                float(horizontal_coords[-1]),
-                z_bottom,
-                z_surface,
-            ],
-        )
-        ax.set(xlabel=horizontal_label, ylabel="Z (m)")
-        ax.set_title(f"{plane.upper()} section at {actual_coordinate:.1f} m")
-        if own_figure:
-            ax.figure.colorbar(image, ax=ax, label=f"{self.property_name} ({self.unit})")
-        if output_path is not None:
-            destination = Path(output_path)
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            ax.figure.savefig(
-                destination,
-                dpi=int(self.visualization_config["preview_dpi"]),
-                bbox_inches="tight",
-            )
-        return ax
-
-    def plot_bedrock_surface(
-        self,
-        ax: Any | None = None,
-        output_path: str | Path | None = None,
-    ) -> Any:
-        """Plot the undulating bedrock elevation (negative z, in metres)."""
-        import matplotlib.pyplot as plt
-
-        if self.bedrock_depth is None:
-            raise ValueError("Generate the field before plotting its bedrock surface.")
-        own_figure = ax is None
-        if own_figure:
-            _, ax = plt.subplots(figsize=tuple(self.visualization_config["slice_figsize"]))
-        elevation = -self.bedrock_depth.T
-        image = ax.imshow(
-            elevation,
-            origin="lower",
-            aspect="equal",
-            cmap=self.visualization_config["bedrock_cmap"],
-            extent=[self.grid.x_min, self.grid.x_max, self.grid.y_min, self.grid.y_max],
-        )
-        ax.set(title="Bedrock surface elevation", xlabel="X (m)", ylabel="Y (m)")
-        if own_figure:
-            ax.figure.colorbar(image, ax=ax, label="Bedrock Z (m)")
-        if output_path is not None:
-            destination = Path(output_path)
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            ax.figure.savefig(
-                destination,
-                dpi=int(self.visualization_config["preview_dpi"]),
-                bbox_inches="tight",
-            )
-        return ax
-
-    def visualize_3d(
-        self,
-        output_path: str | Path | None = None,
-        figsize: tuple[float, float] | None = None,
-    ) -> Any:
-        """Create the required depth slices, sections, 3D volume, and bedrock map."""
-        import matplotlib
-
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-        from matplotlib.cm import ScalarMappable
-        from matplotlib.colors import PowerNorm
-
-        if self.field is None or self.bedrock_depth is None:
-            raise ValueError("Generate the field before visualizing it.")
-
-        figure_size = (
-            tuple(self.visualization_config["preview_figsize"])
-            if figsize is None
-            else figsize
-        )
-        fig = plt.figure(figsize=figure_size, constrained_layout=True)
-        layout = fig.add_gridspec(2, 4)
-        axes = [
-            [fig.add_subplot(layout[0, column]) for column in range(4)],
-            [
-                fig.add_subplot(layout[1, column], projection="3d" if column >= 2 else None)
-                for column in range(4)
-            ],
-        ]
-        fig.suptitle(f"3D {self.property_name.upper()} geological ground truth")
-
-        for ax, level in zip(axes[0][:3], (0.0, -5.0, -10.0)):
-            self.plot_horizontal_slice(level, ax=ax)
-        self.plot_bedrock_surface(ax=axes[0][3])
-        self.plot_vertical_section("xz", ax=axes[1][0])
-        self.plot_vertical_section("yz", ax=axes[1][1])
-
-        volume_ax = axes[1][2]
-        x_idx = np.unique(
-            np.linspace(
-                0,
-                self.grid.nx - 1,
-                min(self.grid.nx, int(self.visualization_config["volume_max_x_samples"])),
-                dtype=int,
-            )
-        )
-        y_idx = np.unique(
-            np.linspace(
-                0,
-                self.grid.ny - 1,
-                min(self.grid.ny, int(self.visualization_config["volume_max_y_samples"])),
-                dtype=int,
-            )
-        )
-        z_idx = np.unique(
-            np.linspace(
-                0,
-                self.grid.nz - 1,
-                min(self.grid.nz, int(self.visualization_config["volume_max_z_samples"])),
-                dtype=int,
-            )
-        )
-        x = self.grid.x_coords[x_idx]
-        y = self.grid.y_coords[y_idx]
-        z_indices = z_idx[::-1]
-        z = self.grid.z_coords[z_indices]
-        cmap = plt.get_cmap(self.visualization_config["cmap"])
-        norm = PowerNorm(
-            gamma=float(self.visualization_config["qc_gamma"]),
-            vmin=float(self.field.min()),
-            vmax=float(self.field.max()),
-        )
-
-        # Orthogonal cut planes reveal interior geology instead of hiding it
-        # behind the opaque outer faces of a filled voxel block.
-        x_mesh, y_mesh = np.meshgrid(x, y, indexing="ij")
-        top_values = self.field[np.ix_(x_idx, y_idx, [0])][:, :, 0]
-        volume_ax.plot_surface(
-            x_mesh,
-            y_mesh,
-            np.full_like(x_mesh, float(self.grid.z_coords[0])),
-            facecolors=cmap(norm(top_values)),
-            shade=False,
-            linewidth=0,
-        )
-
-        middle_y = y_idx[len(y_idx) // 2]
-        section_x_mesh, section_z_mesh = np.meshgrid(x, z, indexing="ij")
-        xz_values = self.field[np.ix_(x_idx, [middle_y], z_indices)][:, 0, :]
-        volume_ax.plot_surface(
-            section_x_mesh,
-            np.full_like(section_x_mesh, self.grid.y_coords[middle_y]),
-            section_z_mesh,
-            facecolors=cmap(norm(xz_values)),
-            shade=False,
-            linewidth=0,
-        )
-
-        middle_x = x_idx[len(x_idx) // 2]
-        section_y_mesh, section_z_mesh = np.meshgrid(y, z, indexing="ij")
-        yz_values = self.field[np.ix_([middle_x], y_idx, z_indices)][0, :, :]
-        volume_ax.plot_surface(
-            np.full_like(section_y_mesh, self.grid.x_coords[middle_x]),
-            section_y_mesh,
-            section_z_mesh,
-            facecolors=cmap(norm(yz_values)),
-            shade=False,
-            linewidth=0,
-        )
-        volume_ax.set(
-            title="3D qc volume (orthogonal sections)",
-            xlabel="X (m)",
-            ylabel="Y (m)",
-            zlabel="Z (m)",
-            xlim=(self.grid.x_min, self.grid.x_max),
-            ylim=(self.grid.y_min, self.grid.y_max),
-            zlim=(float(np.min(self.grid.z_coords)), float(np.max(self.grid.z_coords))),
-        )
-        volume_ax.set_box_aspect(self.visualization_config["volume_aspect"])
-        volume_ax.view_init(
-            elev=int(self.visualization_config["elevation"]),
-            azim=int(self.visualization_config["azimuth"]),
-        )
-
-        bedrock_ax = axes[1][3]
-        x_mesh, y_mesh = np.meshgrid(self.grid.x_coords, self.grid.y_coords, indexing="ij")
-        bedrock_ax.plot_surface(
-            x_mesh,
-            y_mesh,
-            -self.bedrock_depth,
-            cmap=self.visualization_config["bedrock_cmap"],
-            linewidth=0,
-            antialiased=True,
-        )
-        bedrock_ax.set(
-            title="3D bedrock surface",
-            xlabel="X (m)",
-            ylabel="Y (m)",
-            zlabel="Z (m)",
-            xlim=(self.grid.x_min, self.grid.x_max),
-            ylim=(self.grid.y_min, self.grid.y_max),
-            zlim=(float(np.min(self.grid.z_coords)), 0.0),
-        )
-        bedrock_ax.set_box_aspect(self.visualization_config["bedrock_aspect"])
-        bedrock_ax.view_init(
-            elev=int(self.visualization_config["elevation"]),
-            azim=int(self.visualization_config["azimuth"]),
-        )
-
-        colorbar = fig.colorbar(
-            ScalarMappable(norm=norm, cmap=cmap),
-            ax=[*axes[0], axes[1][0], axes[1][1], volume_ax],
-            shrink=float(self.visualization_config["colorbar_shrink"]),
-            pad=float(self.visualization_config["colorbar_pad"]),
-        )
-        colorbar.set_label(f"{self.property_name} ({self.unit})")
-        if output_path is not None:
-            destination = Path(output_path)
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            fig.savefig(
-                destination,
-                dpi=int(self.visualization_config["preview_dpi"]),
-                bbox_inches="tight",
-            )
-        return fig
-
-    def visualize(
-        self,
-        output_path: str | Path | None = None,
-        figsize: tuple[float, float] | None = None,
-    ) -> Any:
-        """Backward-compatible alias for :meth:`visualize_3d`."""
-        return self.visualize_3d(output_path=output_path, figsize=figsize)
 
     def __repr__(self) -> str:
         return (

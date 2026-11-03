@@ -45,29 +45,107 @@ uv sync --dev
 # Generate the continuous qc ground-truth volume and its preview.
 uv run python src/generate_environment.py
 
-# Generate the default 2D GemPy training pool.
-uv run python src/generate_field_pool.py
+# Generate the default 3D GemPy training pool.
+uv run python src/generate_field_pool.py field_pool.mode=3d
 
 # Run the tests.
 uv run pytest
 ```
 
-The RL environments need generated field-pool files before training, evaluation,
-or baseline runs. The default training pool is `data/field_pool_train.npy`; the
-default evaluation pool is `data/field_pool_eval.npy`. To generate the
-evaluation pool separately, for example:
+The RL environments need generated 3D field-pool files before training or
+evaluation. The default training pool is `data/field_pool_train_3d.npy`. To
+generate a separate evaluation pool:
 
 ```bash
 uv run python src/generate_field_pool.py \
-  field_pool.output=data/field_pool_eval.npy \
+  field_pool.mode=3d \
+  field_pool.output=data/field_pool_eval_3d.npy \
   field_pool.seed_start=100
 ```
 
-Pool generation defaults to the legacy 2D mode. To generate a 3D training pool:
+The environment uses the 3D full observed map representation and flattens it
+for the configured MLP policy. The unflattened map remains the canonical
+observation representation so a future 3D CNN can reuse the same environment
+contract.
+
+The shared MLP architecture is configured in
+`conf/model/mlp.yaml` and is used by PPO, A2C, and DQN. The default experiment
+uses a two-layer `[64, 32]` network with ReLU activations. The environment
+configuration sets `max_holes: 7`, so learned policies and baselines stop under
+the same maximum CPT sounding budget.
+
+Each drilling action uses a stable fixed mapping to an integer `[x, y]`
+coordinate: `action = x * width + y`. Coordinates may be selected in any
+order, including backwards movement. Once selected, the coordinate is marked
+unavailable in the shared action mask and cannot be selected again. The mask is
+also appended to the MLP observation so every algorithm receives the same
+availability information. Changing the action space or observation shape
+requires retraining existing models.
+
+Train the algorithms with the shared `[64, 32]` MLP:
 
 ```bash
-uv run python src/generate_field_pool.py field_pool.mode=3d
+uv run python src/train_ppo.py
+uv run python src/train_a2c.py
+uv run python src/train_dqn.py
 ```
+
+A2C and DQN use the same coordinate-based environment and MLP architecture as
+PPO. Existing checkpoints from the former movement-action environment must be
+retrained after the action-space change.
+
+PPO uses `MaskablePPO` from `sb3-contrib`. A2C uses a custom actor-critic
+policy that masks categorical logits, while DQN uses a custom policy and
+algorithm that mask Q-values, epsilon-greedy actions, and replay targets.
+All three use the same fixed mapping and `env.action_masks()` semantics.
+Existing checkpoints must be retrained after this change.
+
+For a smoke test before a full run, override the timesteps and model directory
+through Hydra:
+
+```bash
+uv run python src/train_ppo.py \
+  training.total_timesteps=10000 \
+  training.model_name=ppo_mlp_smoke
+```
+
+PPO, A2C, DQN, and baseline evaluations support both random field sampling and
+one-to-one evaluation of every field in the evaluation pool. For a fair
+comparison, use the same episode count and mode for each:
+
+```bash
+uv run python src/evaluate_ppo.py \
+  evaluation.episodes=50 \
+  evaluation.mode=one_to_one \
+  'evaluation.comparisons=[random,even_spacing]'
+```
+
+Supported comparisons are `random` and `even_spacing`. In `one_to_one` mode, episode `i` evaluates
+evaluation-pool field `i`; the episode count must not exceed the number of
+fields in the pool. Comparisons use the same evaluation pool, episode count,
+and mode as PPO.
+
+For A2C or DQN, use the corresponding wrapper and checkpoint:
+
+```bash
+uv run python src/evaluate_a2c.py \
+  evaluation.model_run_id=<a2c-run-id> \
+  evaluation.model_name=a2c_coordinate_200k \
+  evaluation.episodes=50 \
+  evaluation.mode=one_to_one \
+  'evaluation.comparisons=[random,even_spacing]'
+
+uv run python src/evaluate_dqn.py \
+  evaluation.model_run_id=<dqn-run-id> \
+  evaluation.model_name=dqn_coordinate_200k \
+  evaluation.episodes=50 \
+  evaluation.mode=one_to_one \
+  'evaluation.comparisons=[random,even_spacing]'
+```
+
+The saved run includes the resolved Hydra configuration and metadata, allowing
+the resulting RMSE and number of soundings to be compared with the random and
+regular-grid baseline reports.
 
 The corresponding 3D pool is written to `data/field_pool_train_3d.npy` by
 default. Select the pool used by the environments with the settings in
@@ -84,6 +162,42 @@ uv run python src/generate_environment.py
 This writes the field to `data/realistic_qc_ground_truth.npz` and the image to
 `environment_visualisation/realistic_qc_ground_truth.png`. The generator,
 field implementation, and output paths are configured in:
+
+### Make a drilled-hole preview with custom coordinates
+
+```bash
+uv run python src/generate_drilled_holes_preview.py
+```
+
+This uses the Hydra config in `conf/environment/drilled_holes/default.yaml` and
+saves the result to `environment_visualisation/drilled_holes_preview.png` by
+default. To override the hole positions from the command line:
+
+```bash
+uv run python src/generate_drilled_holes_preview.py \
+  environment/drilled_holes.positions='[[10.0, 20.0], [32.0, 55.0], [70.0, 82.0], [90.0, 40.0]]' \
+  environment/drilled_holes.z=0.0 \
+  environment/drilled_holes.output=environment_visualisation/my_holes.png
+```
+
+### Make a 3D drilled-hole volume preview
+
+```bash
+uv run python src/generate_drilled_holes_3d_preview.py
+```
+
+This creates a 3D field preview with vertical drill markers through the full
+volume and saves it to `environment_visualisation/drilled_holes_3d_preview.png`
+by default. You can override the hole coordinates and output path with Hydra:
+
+```bash
+uv run python src/generate_drilled_holes_3d_preview.py \
+  visualization.drilled_holes.positions='[[10.0, 20.0], [32.0, 55.0], [70.0, 82.0], [90.0, 40.0]]' \
+  visualization.drilled_holes.output='environment_visualisation/my_3d_holes.png'
+```
+
+The same script can also be used to generate a deeper slice or a different set
+of illustrative borehole locations without editing the Python code.
 
 - `src/generate_environment.py` — command-line entry point.
 - `src/property_field.py` — geological field generation, sampling,
@@ -176,6 +290,19 @@ uv run python src/evaluate_ppo.py \
 `src/run_all_evaluations.py` runs the algorithms and baseline scenarios listed
 in `conf/orchestration/default.yaml`.
 
+To also generate a publication-ready comparison figure for all reports produced
+by the orchestration run, enable the optional Hydra parameter:
+
+```bash
+uv run python src/run_all_evaluations.py \
+  orchestration.generate_diagram=true
+```
+
+The output directory contains a prediction-error RMSE diagram with the value
+annotated above each bar. It includes `model_comparison.png` (300 DPI),
+`model_comparison.pdf` (vector format), and `summary.csv` under
+`reports/experiments/comparisons/`.
+
 ### Run a baseline
 
 ```bash
@@ -199,9 +326,9 @@ which uses the evaluation pool. Both use the same action, observation, and
 reward settings in `conf/environment/default.yaml`.
 
 - The environment samples a geological field from its configured pool.
-- An action selects a configured movement distance along the drilling line.
-- The observation contains position and summary statistics for the current
-  field slice/column.
+- An action selects one fixed `[x, y]` coordinate using `x * width + y`.
+- The observation contains the observed map, position, and shared availability
+  mask for drilled coordinates.
 - The environment interpolates between drilled positions and calculates RMSE
   against the complete field. It combines RMSE and borehole count into reward.
 - Episode `info` includes RMSE and the number of drilled holes.
@@ -221,7 +348,7 @@ overridden on the command line using `group.key=value`.
 | --- | --- |
 | `conf/grid/site.yaml` | Grid dimensions and world-coordinate bounds; the surface is z=0 and depth is negative. |
 | `conf/geology/realistic_qc.yaml` | Continuous qc value range, spatial correlations, lenses, surface, and bedrock characteristics. |
-| `conf/environment/default.yaml` | Discrete drilling distances, observations, reward weights, starting position, and training/evaluation pool paths. |
+| `conf/environment/default.yaml` | Coordinate action mapping, observations, reward weights, starting position, and training/evaluation pool paths. |
 | `conf/field_pool/default.yaml` | GemPy pool size, mode, seed range, retry count, and output files. |
 | `conf/gempy/default.yaml` | GemPy extent, formations, input point counts, and legacy 2D resolution. |
 | `conf/paths/default.yaml` | Central locations for generated data, model checkpoints, reports, and visualizations. |

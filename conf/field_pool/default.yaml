@@ -1,8 +1,10 @@
 count: 20
 seed_start: 0
+generator: qc
 mode: 3d
 output: null
 output_2d: data/field_pool_train.npy
 output_3d: data/field_pool_train_3d.npy
+output_qc: data/field_pool_train_qc.npy
 max_retries: 3
 parallel: false

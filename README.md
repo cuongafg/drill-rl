@@ -53,14 +53,45 @@ uv run pytest
 ```
 
 The RL environments need generated 3D field-pool files before training or
-evaluation. The default training pool is `data/field_pool_train_3d.npy`. To
-generate a separate evaluation pool:
+evaluation. By default, field-pool generation creates continuous realistic-QC
+fields and stores them in one stacked NumPy file:
 
 ```bash
 uv run python src/generate_field_pool.py \
+  field_pool.generator=qc \
+  field_pool.count=10000 \
+  field_pool.seed_start=0 \
+  field_pool.output=data/field_pool_train_qc.npy
+```
+
+The QC generator writes incrementally through a NumPy memory map, so it does
+not keep the complete pool in RAM and does not create one file per field. The
+default RL observation scaling is `0–300 MPa`, matching
+`conf/geology/realistic_qc.yaml`.
+
+To generate a separate QC evaluation pool:
+
+```bash
+uv run python src/generate_field_pool.py \
+  field_pool.generator=qc \
+  field_pool.count=500 \
+  field_pool.seed_start=10000 \
+  field_pool.output=data/field_pool_eval_qc.npy
+```
+
+To use the legacy categorical GemPy pools instead, select the generator
+explicitly and use the legacy observation scaling:
+
+```bash
+uv run python src/generate_field_pool.py \
+  field_pool.generator=gempy \
   field_pool.mode=3d \
-  field_pool.output=data/field_pool_eval_3d.npy \
-  field_pool.seed_start=100
+  field_pool.output=data/field_pool_train_3d.npy
+
+uv run python src/train_ppo.py \
+  environment.pool=data/field_pool_train_3d.npy \
+  environment.observation.value_low=1.0 \
+  environment.observation.value_high=5.0
 ```
 
 For parallel field-pool jobs, isolate GemPy's intermediate CSV inputs per

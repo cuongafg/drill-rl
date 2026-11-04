@@ -20,8 +20,8 @@ class SharedCnnFeatureExtractor(BaseFeaturesExtractor):
 
     The environment keeps the action mask at the end of the observation so
     each algorithm can apply its own masking logic. The extractor consumes
-    only the observed-value and known-location volumes plus the normalized
-    position.
+    the observed-value and known-location volumes with a true 3D convolution,
+    plus the normalized position.
     """
 
     def __init__(
@@ -43,15 +43,14 @@ class SharedCnnFeatureExtractor(BaseFeaturesExtractor):
         super().__init__(observation_space, int(output_dim))
         self.field_shape = (nx, ny, nz)
         self.map_size = map_size
-        channels = 2 * nz
         self.cnn = nn.Sequential(
-            nn.Conv2d(channels, 32, kernel_size=5, stride=2, padding=2),
+            nn.Conv3d(2, 32, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
+            nn.Conv3d(32, 64, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
+            nn.Conv3d(64, 128, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
-            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.AdaptiveAvgPool3d((1, 1, 1)),
             nn.Flatten(),
         )
         self.linear = nn.Sequential(
@@ -63,8 +62,7 @@ class SharedCnnFeatureExtractor(BaseFeaturesExtractor):
         batch = observations.reshape(-1, observations.shape[-1])
         nx, ny, nz = self.field_shape
         volume = batch[:, : self.map_size].reshape(-1, 2, nx, ny, nz)
-        spatial = volume.permute(0, 1, 4, 2, 3).reshape(-1, 2 * nz, nx, ny)
-        spatial_features = self.cnn(spatial)
+        spatial_features = self.cnn(volume)
         position = batch[:, self.map_size : self.map_size + 2]
         return self.linear(th.cat((spatial_features, position), dim=1))
 

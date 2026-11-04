@@ -98,9 +98,9 @@ uv run python src/train_ppo.py \
   training.model_name=ppo_cnn_200k
 ```
 
-The CNN currently uses the two observed-map channels at each depth level as
-2D convolution channels and appends the normalized drilling position before
-the shared feature vector is passed to the algorithm-specific head.
+The CNN uses a true 3D convolution over the two observed-map channels and the
+full x-y-depth volume. It appends the normalized drilling position before the
+shared feature vector is passed to the algorithm-specific head.
 
 Each drilling action uses a stable fixed mapping to an integer `[x, y]`
 coordinate: `action = x * width + y`. Coordinates may be selected in any

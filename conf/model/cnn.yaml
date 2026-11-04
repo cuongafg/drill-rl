@@ -1,0 +1,5 @@
+name: cnn
+encoder: cnn
+policy: CnnPolicy
+policy_kwargs:
+  feature_extractor_output_dim: 128

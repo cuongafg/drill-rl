@@ -9,7 +9,13 @@ from sb3_contrib import MaskablePPO
 from stable_baselines3 import A2C
 
 from environment import DrillEnv
-from masked_policies import MaskedActorCriticPolicy, MaskedDQN, MaskedDQNPolicy
+from masked_policies import (
+    MaskedActorCriticPolicy,
+    MaskedDQN,
+    MaskedDQNPolicy,
+    MaskedPPOActorCriticPolicy,
+    SharedCnnFeatureExtractor,
+)
 from model_artifacts import (
     create_model_run_id,
     model_checkpoint_filename,
@@ -28,16 +34,19 @@ def train(cfg: DictConfig) -> None:
 
     env = DrillEnv(cfg.environment)
     algorithm_type = AGENT_TYPES[algorithm]
-    policy = {
-        "ppo": str(cfg.training.policy),
-        "a2c": MaskedActorCriticPolicy,
-        "dqn": MaskedDQNPolicy,
-    }[algorithm]
+    use_cnn = str(cfg.model.get("encoder", "mlp")).lower() == "cnn"
+    if algorithm == "ppo":
+        policy = MaskedPPOActorCriticPolicy if use_cnn else str(cfg.training.policy)
+    elif algorithm == "a2c":
+        policy = MaskedActorCriticPolicy
+    else:
+        policy = MaskedDQNPolicy
+    policy_kwargs = _resolve_policy_kwargs(cfg.model, cfg.environment)
     model = algorithm_type(
         policy,
         env,
         verbose=int(cfg.training.verbose),
-        policy_kwargs=_resolve_policy_kwargs(cfg.model),
+        policy_kwargs=policy_kwargs,
         **_resolve_parameters(cfg.training.parameters),
     )
     model.learn(total_timesteps=int(cfg.training.total_timesteps))
@@ -73,9 +82,20 @@ def _resolve_parameters(parameters: DictConfig) -> dict[str, Any]:
     return {key: value for key, value in parameters.items()}
 
 
-def _resolve_policy_kwargs(model_config: DictConfig) -> dict[str, Any]:
+def _resolve_policy_kwargs(
+    model_config: DictConfig,
+    environment_config: DictConfig,
+) -> dict[str, Any]:
     """Resolve the shared policy architecture for PPO, A2C, and DQN."""
     policy_kwargs = dict(model_config.policy_kwargs)
+    if str(model_config.get("encoder", "mlp")).lower() == "cnn":
+        observation = environment_config["observation"]
+        policy_kwargs["features_extractor_class"] = SharedCnnFeatureExtractor
+        policy_kwargs["features_extractor_kwargs"] = {
+            "field_shape": tuple(int(value) for value in observation["field_shape"]),
+            "output_dim": int(policy_kwargs.pop("feature_extractor_output_dim", 128)),
+        }
+        return policy_kwargs
     activation_name = str(policy_kwargs.get("activation_fn", "tanh")).lower()
     activations = {"relu": nn.ReLU, "tanh": nn.Tanh, "elu": nn.ELU}
     try:

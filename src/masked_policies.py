@@ -2,10 +2,71 @@ from __future__ import annotations
 
 import numpy as np
 import torch as th
+import torch.nn as nn
+from gymnasium import spaces
+from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.distributions import CategoricalDistribution
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3 import DQN
 from stable_baselines3.dqn.policies import DQNPolicy, QNetwork
+from sb3_contrib.common.maskable.policies import (
+    MaskableActorCriticPolicy as BaseMaskableActorCriticPolicy,
+)
+from sb3_contrib.common.maskable.distributions import MaskableCategoricalDistribution
+
+
+class SharedCnnFeatureExtractor(BaseFeaturesExtractor):
+    """Extract spatial features from the flattened observed 3D map.
+
+    The environment keeps the action mask at the end of the observation so
+    each algorithm can apply its own masking logic. The extractor consumes
+    only the observed-value and known-location volumes plus the normalized
+    position.
+    """
+
+    def __init__(
+        self,
+        observation_space: spaces.Box,
+        field_shape: tuple[int, int, int] = (101, 101, 21),
+        output_dim: int = 128,
+    ) -> None:
+        if len(observation_space.shape) != 1:
+            raise ValueError("SharedCnnFeatureExtractor requires a flat observation.")
+        nx, ny, nz = (int(value) for value in field_shape)
+        map_size = 2 * nx * ny * nz
+        expected_size = map_size + 2
+        if observation_space.shape[0] < expected_size:
+            raise ValueError(
+                f"Observation has {observation_space.shape[0]} values but requires "
+                f"at least {expected_size} for field_shape={field_shape}."
+            )
+        super().__init__(observation_space, int(output_dim))
+        self.field_shape = (nx, ny, nz)
+        self.map_size = map_size
+        channels = 2 * nz
+        self.cnn = nn.Sequential(
+            nn.Conv2d(channels, 32, kernel_size=5, stride=2, padding=2),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.Flatten(),
+        )
+        self.linear = nn.Sequential(
+            nn.Linear(128 + 2, int(output_dim)),
+            nn.ReLU(),
+        )
+
+    def forward(self, observations: th.Tensor) -> th.Tensor:
+        batch = observations.reshape(-1, observations.shape[-1])
+        nx, ny, nz = self.field_shape
+        volume = batch[:, : self.map_size].reshape(-1, 2, nx, ny, nz)
+        spatial = volume.permute(0, 1, 4, 2, 3).reshape(-1, 2 * nz, nx, ny)
+        spatial_features = self.cnn(spatial)
+        position = batch[:, self.map_size : self.map_size + 2]
+        return self.linear(th.cat((spatial_features, position), dim=1))
 
 
 def _mask_from_observation(observation: th.Tensor, action_count: int) -> th.Tensor:
@@ -17,16 +78,38 @@ def _mask_from_observation(observation: th.Tensor, action_count: int) -> th.Tens
     return mask
 
 
-class MaskedActorCriticPolicy(ActorCriticPolicy):
-    def _masked_distribution(self, latent_pi: th.Tensor, obs: th.Tensor):
-        if not isinstance(self.action_dist, CategoricalDistribution):
+class _MaskedActorCriticMixin:
+    def _masked_distribution(
+        self,
+        latent_pi: th.Tensor,
+        obs: th.Tensor,
+        action_masks: th.Tensor | np.ndarray | None = None,
+    ):
+        if not isinstance(
+            self.action_dist,
+            (CategoricalDistribution, MaskableCategoricalDistribution),
+        ):
             raise TypeError("MaskedActorCriticPolicy requires a Discrete action space.")
         logits = self.action_net(latent_pi)
-        mask = _mask_from_observation(obs, self.action_space.n)
+        if action_masks is None:
+            mask = _mask_from_observation(obs, self.action_space.n)
+        else:
+            mask = th.as_tensor(action_masks, device=logits.device, dtype=th.bool)
+            if mask.ndim == 1:
+                mask = mask.unsqueeze(0)
+            if mask.shape != (logits.shape[0], self.action_space.n):
+                raise ValueError("Action mask shape does not match the policy output.")
+            if not th.all(mask.any(dim=1)):
+                raise ValueError("Every observation must have at least one valid action.")
         logits = logits.masked_fill(~mask, th.finfo(logits.dtype).min)
         return self.action_dist.proba_distribution(action_logits=logits)
 
-    def forward(self, obs: th.Tensor, deterministic: bool = False):
+    def forward(
+        self,
+        obs: th.Tensor,
+        deterministic: bool = False,
+        action_masks: np.ndarray | None = None,
+    ):
         features = self.extract_features(obs)
         if self.share_features_extractor:
             latent_pi, latent_vf = self.mlp_extractor(features)
@@ -35,12 +118,17 @@ class MaskedActorCriticPolicy(ActorCriticPolicy):
             latent_pi = self.mlp_extractor.forward_actor(pi_features)
             latent_vf = self.mlp_extractor.forward_critic(vf_features)
         values = self.value_net(latent_vf)
-        distribution = self._masked_distribution(latent_pi, obs)
+        distribution = self._masked_distribution(latent_pi, obs, action_masks)
         actions = distribution.get_actions(deterministic=deterministic)
         log_prob = distribution.log_prob(actions)
         return actions.reshape((-1, *self.action_space.shape)), values, log_prob
 
-    def evaluate_actions(self, obs: th.Tensor, actions: th.Tensor):
+    def evaluate_actions(
+        self,
+        obs: th.Tensor,
+        actions: th.Tensor,
+        action_masks: th.Tensor | None = None,
+    ):
         features = self.extract_features(obs)
         if self.share_features_extractor:
             latent_pi, latent_vf = self.mlp_extractor(features)
@@ -48,23 +136,39 @@ class MaskedActorCriticPolicy(ActorCriticPolicy):
             pi_features, vf_features = features
             latent_pi = self.mlp_extractor.forward_actor(pi_features)
             latent_vf = self.mlp_extractor.forward_critic(vf_features)
-        distribution = self._masked_distribution(latent_pi, obs)
+        distribution = self._masked_distribution(latent_pi, obs, action_masks)
         return (
             self.value_net(latent_vf),
             distribution.log_prob(actions),
             distribution.entropy(),
         )
 
-    def _predict(self, observation: th.Tensor, deterministic: bool = False) -> th.Tensor:
+    def _predict(
+        self,
+        observation: th.Tensor,
+        deterministic: bool = False,
+        action_masks: np.ndarray | None = None,
+    ) -> th.Tensor:
         features = self.extract_features(observation)
         latent_pi = (
             self.mlp_extractor.forward_actor(features)
             if not self.share_features_extractor
             else self.mlp_extractor(features)[0]
         )
-        return self._masked_distribution(latent_pi, observation).get_actions(
-            deterministic=deterministic
-        )
+        return self._masked_distribution(
+            latent_pi, observation, action_masks
+        ).get_actions(deterministic=deterministic)
+
+
+class MaskedActorCriticPolicy(_MaskedActorCriticMixin, ActorCriticPolicy):
+    """Masked actor-critic policy for A2C."""
+
+
+class MaskedPPOActorCriticPolicy(
+    _MaskedActorCriticMixin,
+    BaseMaskableActorCriticPolicy,
+):
+    """Masked actor-critic policy compatible with MaskablePPO."""
 
 
 class MaskedQNetwork(QNetwork):

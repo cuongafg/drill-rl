@@ -85,6 +85,23 @@ uses a two-layer `[64, 32]` network with ReLU activations. The environment
 configuration sets `max_holes: 7`, so learned policies and baselines stop under
 the same maximum CPT sounding budget.
 
+The algorithms can also use the shared CNN feature extractor configured in
+`conf/model/cnn.yaml`. It reshapes the flattened observed map internally,
+while PPO, A2C, and DQN retain separate policy/value or Q-value heads and
+algorithm-specific action masking. Select it for any training entry point
+with `model=cnn`, for example:
+
+```bash
+uv run python src/train_ppo.py \
+  model=cnn \
+  training.total_timesteps=200000 \
+  training.model_name=ppo_cnn_200k
+```
+
+The CNN currently uses the two observed-map channels at each depth level as
+2D convolution channels and appends the normalized drilling position before
+the shared feature vector is passed to the algorithm-specific head.
+
 Each drilling action uses a stable fixed mapping to an integer `[x, y]`
 coordinate: `action = x * width + y`. Coordinates may be selected in any
 order, including backwards movement. Once selected, the coordinate is marked

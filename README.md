@@ -94,6 +94,18 @@ uv run python src/train_ppo.py \
   environment.observation.value_high=5.0
 ```
 
+Inspect any field in a QC `.npy` pool with a 1-based field number:
+
+```bash
+uv run python src/visualize_field_pool.py 5 \
+  --pool data/field_pool_train_qc_20.npy
+```
+
+This writes or overwrites
+`environment_visualisation/field_pool_preview.png` and reads only the selected
+field through NumPy memory mapping. Use `--output` when you want a different
+filename.
+
 For parallel field-pool jobs, isolate GemPy's intermediate CSV inputs per
 field and remove them automatically after use:
 

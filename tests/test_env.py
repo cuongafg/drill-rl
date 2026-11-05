@@ -119,6 +119,23 @@ def test_reset_rejects_invalid_pool_field_index(tmp_path):
        env.reset(options={"field_index": 2})
 
 
+def test_initial_rmse_placeholder_can_be_disabled(tmp_path):
+   pool_path = tmp_path / "pool.npy"
+   pool = np.zeros((1, 3, 2, 2), dtype=np.float32)
+   pool[0, 0, :, :] = 10.0
+   np.save(pool_path, pool)
+   config = _environment_config(pool_path)
+   config["initial_position"] = [0, 0]
+   config["observation"]["field_shape"] = [3, 2, 2]
+   config["observation"]["value_high"] = 10.0
+   config["reward"]["use_initial_rmse_placeholder"] = False
+   env = DrillEnv(config)
+
+   env.reset(options={"field_index": 0})
+
+   assert env._compute_rmse() > 5.0
+
+
 def test_local_patch_builder_uses_only_drilled_data():
    field = np.zeros((10, 5, 5), dtype=np.float32)
    field[2, :, :] = 3.0

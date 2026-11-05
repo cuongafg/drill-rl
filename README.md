@@ -122,6 +122,14 @@ for the configured MLP policy. The unflattened map remains the canonical
 observation representation so a future 3D CNN can reuse the same environment
 contract.
 
+By default, the environment uses `reward.initial_rmse` as a placeholder while
+only the automatically drilled initial column exists. To calculate the actual
+one-column RMSE during training or evaluation, override:
+
+```bash
+environment.reward.use_initial_rmse_placeholder=false
+```
+
 The shared MLP architecture is configured in
 `conf/model/mlp.yaml` and is used by PPO, A2C, and DQN. The default experiment
 uses a two-layer `[64, 32]` network with ReLU activations. The environment

@@ -33,6 +33,9 @@ class DrillEnv(gym.Env):
         self.rmse_weight = float(self.config["reward"]["rmse_weight"])
         self.borehole_weight = float(self.config["reward"]["borehole_weight"])
         self.initial_rmse = float(self.config["reward"]["initial_rmse"])
+        self.use_initial_rmse_placeholder = bool(
+            self.config["reward"].get("use_initial_rmse_placeholder", True)
+        )
         self.max_holes = int(self.config.get("max_holes", 7))
         if self.max_holes < 1:
             raise ValueError("max_holes must be at least 1.")
@@ -184,7 +187,7 @@ class DrillEnv(gym.Env):
         return np.concatenate((observation, self.action_masks().astype(np.float32)))
 
     def _compute_rmse(self):
-        if len(self.drilled_columns) < 2:
+        if self.use_initial_rmse_placeholder and len(self.drilled_columns) < 2:
             return self.initial_rmse
 
         points = np.asarray(self.drilled_columns, dtype=np.float64)

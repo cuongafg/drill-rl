@@ -67,6 +67,79 @@ class SharedCnnFeatureExtractor(BaseFeaturesExtractor):
         return self.linear(th.cat((spatial_features, position), dim=1))
 
 
+class HybridFeatureExtractor(BaseFeaturesExtractor):
+    """Combine 3D spatial features with an MLP over drilling-state summaries."""
+
+    def __init__(
+        self,
+        observation_space: spaces.Box,
+        field_shape: tuple[int, int, int] = (101, 101, 21),
+        output_dim: int = 128,
+        state_dim: int = 64,
+    ) -> None:
+        if len(observation_space.shape) != 1:
+            raise ValueError("HybridFeatureExtractor requires a flat observation.")
+        nx, ny, nz = (int(value) for value in field_shape)
+        map_size = 2 * nx * ny * nz
+        expected_size = map_size + 2
+        if observation_space.shape[0] < expected_size:
+            raise ValueError(
+                f"Observation has {observation_space.shape[0]} values but requires "
+                f"at least {expected_size} for field_shape={field_shape}."
+            )
+        super().__init__(observation_space, int(output_dim))
+        self.field_shape = (nx, ny, nz)
+        self.map_size = map_size
+        self.state_input_dim = 3 * nz + 2
+        self.cnn = nn.Sequential(
+            nn.Conv3d(2, 32, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+            nn.Conv3d(32, 64, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+            nn.Conv3d(64, 128, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool3d((1, 1, 1)),
+            nn.Flatten(),
+        )
+        self.state_mlp = nn.Sequential(
+            nn.Linear(self.state_input_dim, int(state_dim)),
+            nn.ReLU(),
+            nn.Linear(int(state_dim), int(state_dim)),
+            nn.ReLU(),
+        )
+        self.output = nn.Sequential(
+            nn.Linear(128 + int(state_dim), int(output_dim)),
+            nn.ReLU(),
+        )
+
+    def forward(self, observations: th.Tensor) -> th.Tensor:
+        batch = observations.reshape(-1, observations.shape[-1])
+        nx, ny, nz = self.field_shape
+        volume = batch[:, : self.map_size].reshape(-1, 2, nx, ny, nz)
+        spatial_features = self.cnn(volume)
+
+        observed_values = volume[:, 0]
+        observed_mask = volume[:, 1]
+        mask_count = observed_mask.sum(dim=(1, 2))
+        depth_mean = (observed_values * observed_mask).sum(dim=(1, 2)) / mask_count.clamp_min(1.0)
+        centered = (observed_values - depth_mean[:, None, None, :]) * observed_mask
+        depth_std = th.sqrt(
+            (centered.square().sum(dim=(1, 2)) / mask_count.clamp_min(1.0)).clamp_min(1e-8)
+        )
+        depth_fraction = observed_mask.mean(dim=(1, 2))
+        state_features = th.cat(
+            (
+                depth_mean,
+                depth_std,
+                depth_fraction,
+                observations[:, self.map_size : self.map_size + 2],
+            ),
+            dim=1,
+        )
+        state_features = self.state_mlp(state_features)
+        return self.output(th.cat((spatial_features, state_features), dim=1))
+
+
 def _mask_from_observation(observation: th.Tensor, action_count: int) -> th.Tensor:
     mask = observation[..., -action_count:] > 0.5
     if mask.ndim == 1:

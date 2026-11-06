@@ -15,6 +15,7 @@ from masked_policies import (
     MaskedDQNPolicy,
     MaskedPPOActorCriticPolicy,
     SharedCnnFeatureExtractor,
+    HybridFeatureExtractor,
 )
 from model_artifacts import (
     create_model_run_id,
@@ -34,9 +35,14 @@ def train(cfg: DictConfig) -> None:
 
     env = DrillEnv(cfg.environment)
     algorithm_type = AGENT_TYPES[algorithm]
-    use_cnn = str(cfg.model.get("encoder", "mlp")).lower() == "cnn"
+    encoder = str(cfg.model.get("encoder", "mlp")).lower()
+    use_spatial_encoder = encoder in {"cnn", "hybrid"}
     if algorithm == "ppo":
-        policy = MaskedPPOActorCriticPolicy if use_cnn else str(cfg.training.policy)
+        policy = (
+            MaskedPPOActorCriticPolicy
+            if use_spatial_encoder
+            else str(cfg.training.policy)
+        )
     elif algorithm == "a2c":
         policy = MaskedActorCriticPolicy
     else:
@@ -88,13 +94,21 @@ def _resolve_policy_kwargs(
 ) -> dict[str, Any]:
     """Resolve the shared policy architecture for PPO, A2C, and DQN."""
     policy_kwargs = dict(model_config.policy_kwargs)
-    if str(model_config.get("encoder", "mlp")).lower() == "cnn":
+    encoder = str(model_config.get("encoder", "mlp")).lower()
+    if encoder in {"cnn", "hybrid"}:
         observation = environment_config["observation"]
-        policy_kwargs["features_extractor_class"] = SharedCnnFeatureExtractor
-        policy_kwargs["features_extractor_kwargs"] = {
+        policy_kwargs["features_extractor_class"] = (
+            SharedCnnFeatureExtractor if encoder == "cnn" else HybridFeatureExtractor
+        )
+        extractor_kwargs = {
             "field_shape": tuple(int(value) for value in observation["field_shape"]),
             "output_dim": int(policy_kwargs.pop("feature_extractor_output_dim", 128)),
         }
+        if encoder == "hybrid":
+            extractor_kwargs["state_dim"] = int(
+                policy_kwargs.pop("state_mlp_dim", 64)
+            )
+        policy_kwargs["features_extractor_kwargs"] = extractor_kwargs
         return policy_kwargs
     activation_name = str(policy_kwargs.get("activation_fn", "tanh")).lower()
     activations = {"relu": nn.ReLU, "tanh": nn.Tanh, "elu": nn.ELU}

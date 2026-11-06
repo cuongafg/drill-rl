@@ -1,0 +1,6 @@
+name: hybrid
+encoder: hybrid
+policy: MlpPolicy
+policy_kwargs:
+  feature_extractor_output_dim: 128
+  state_mlp_dim: 64
